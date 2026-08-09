@@ -542,6 +542,23 @@ public class QuanshouzheEntity extends YizxianMob {
                 }
             });
         } catch (Throwable ignored) {}
+        // 2.5 复验：校正后比较「真表值」与「getHealth() 返回值」（后者可能被外部字节码注入
+        //      在 override 出口包裹改写——读偏移通道把表值拉低）。若返回值 < 表值，说明仍被
+        //      偏移通道影响 → 全量扫 Float 通道，把非 vanilla 血量的偏移量通道强制归 0。
+        try {
+            float trueHp = net.minecraft.client.yiz.tool.health.SecureHealthClosure.getHealth(this);
+            float readHp = this.getHealth();   // 可能被注入层改写
+            if (readHp < trueHp - 0.001f) {
+                net.minecraft.client.yiz.tool.health.DirectHealthFallback.forEachFloatItem(this, (acc, cur, item) -> {
+                    if (vanillaHealthAcc != null && acc.getId() == vanillaHealthAcc.getId()) return;
+                    // 只归零"偏移量语义"的通道：值域不合理（|cur| 过大）即视为外部注入的偏移量
+                    if (Math.abs(cur) > trueHp * 2.0f) {
+                        item.setValue(0.0F);
+                        item.setDirty(true);
+                    }
+                });
+            }
+        } catch (Throwable ignored) {}
         // 3. 防死亡倒地状态污染：血量>0 时强制 pose 非 DYING + deathTime 清零
         //    ——外部 mod 反射改 deathTime / 绕过 setPose 直写 DATA_POSE，都会在此被拉回站立状态
         try {
