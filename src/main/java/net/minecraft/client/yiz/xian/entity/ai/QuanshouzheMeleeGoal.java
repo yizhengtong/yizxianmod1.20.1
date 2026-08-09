@@ -9,13 +9,10 @@ import java.util.EnumSet;
 
 /**
  * 辖界者近战挥砍 Goal（1.20.1 移植版）— 贴近目标即时结算伤害。
- * 攻击动画 = Warden 关键帧（broadcastEntityEvent byte 4 触发）；狂暴时攻击间隔减半。
+ * 攻击动画 = Warden 关键帧（broadcastEntityEvent byte 4 触发）；
+ * 攻击间隔/距离按三阶段形态（getAttackInterval / getAttackRange），狂暴只保留移速加成。
  */
 public class QuanshouzheMeleeGoal extends Goal {
-
-    private static final double ATTACK_RANGE = 5.25;
-    private static final int ATTACK_INTERVAL = 12;
-    private static final int ATTACK_INTERVAL_RAGE = 6;
 
     private final QuanshouzheEntity mob;
     private int attackCooldown;
@@ -55,16 +52,17 @@ public class QuanshouzheMeleeGoal extends Goal {
         LivingEntity target = this.mob.getTarget();
         if (target == null) return;
         this.mob.getLookControl().setLookAt(target, 30f, 30f);
+        double attackRange = this.mob.getAttackRange();
         double distSq = this.mob.distanceToSqr(target);
-        if (distSq > ATTACK_RANGE * ATTACK_RANGE) {
+        if (distSq > attackRange * attackRange) {
             this.mob.getNavigation().moveTo(target, 1.0);
         }
         if (this.attackCooldown > 0) {
             this.attackCooldown--;
             return;
         }
-        if (distSq <= ATTACK_RANGE * ATTACK_RANGE) {
-            this.attackCooldown = this.mob.isRaging() ? ATTACK_INTERVAL_RAGE : ATTACK_INTERVAL;
+        if (distSq <= attackRange * attackRange) {
+            this.attackCooldown = this.mob.getAttackInterval();
             this.mob.swing(InteractionHand.MAIN_HAND);
             this.mob.attackTarget(target);
         }

@@ -2,6 +2,7 @@ package net.minecraft.client.yiz.xian.entity;
 
 import net.minecraft.client.yiz.attribute.YizAttributes;
 import net.minecraft.client.yiz.editor.PoshiBypassBridge;
+import net.minecraft.client.yiz.tool.attribute.AttributeStandardizer;
 import net.minecraft.client.yiz.tool.attribute.EntityAttributeGate;
 import net.minecraft.client.yiz.xian.YizxianMod;
 import net.minecraft.client.yiz.xian.entity.base.YizxianMob;
@@ -16,6 +17,7 @@ import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.sounds.SoundEvents;
 import net.minecraft.util.Mth;
 import net.minecraft.world.BossEvent;
+import net.minecraft.tags.DamageTypeTags;
 import net.minecraft.world.damagesource.DamageSource;
 import net.minecraft.world.entity.AnimationState;
 import net.minecraft.world.entity.Entity;
@@ -55,6 +57,10 @@ public class QuanshouzheEntity extends YizxianMob {
     public static final int PHASE_NONE = 0;
 
     private static final double RAGE_SPEED_BONUS = 0.2;
+    // 护甲/法防指数减伤参数（与前置库 LivingEntityMixin 一致：锚定 x=20→50%、x=50→75%）
+    private static final double EXP_REDUCTION_BASE = 40.0;
+    private static final double EXP_REDUCTION_EXP =
+        Math.log(2.0) / Math.log(1.0 + 50.0 / EXP_REDUCTION_BASE);
     // 1.20.1 AttributeModifier 用 UUID（非 ResourceLocation）；确定性 UUID 保证 remove 幂等
     private static final java.util.UUID RAGE_SPEED_ID =
         java.util.UUID.nameUUIDFromBytes((YizxianMod.MODID + ":quanshouzhe_rage_speed").getBytes(java.nio.charset.StandardCharsets.UTF_8));
@@ -65,6 +71,19 @@ public class QuanshouzheEntity extends YizxianMob {
         SynchedEntityData.defineId(QuanshouzheEntity.class, EntityDataSerializers.BOOLEAN);
     private static final EntityDataAccessor<Boolean> DATA_HEAVY_ATTACK =
         SynchedEntityData.defineId(QuanshouzheEntity.class, EntityDataSerializers.BOOLEAN);
+
+    /** 原版 DATA_POSE 通道（反射获取）：防外部 mod 直写 Pose.DYING 倒地状态污染观感。 */
+    private static final EntityDataAccessor<Pose> DATA_POSE_ACCESSOR = initPoseAccessor();
+
+    private static EntityDataAccessor<Pose> initPoseAccessor() {
+        try {
+            java.lang.reflect.Field f = LivingEntity.class.getDeclaredField("DATA_POSE_ID");
+            f.setAccessible(true);
+            return (EntityDataAccessor<Pose>) f.get(null);
+        } catch (Throwable ignored) {
+            return null;
+        }
+    }
 
     private final int[] skillCooldowns = new int[0];
 
@@ -85,6 +104,7 @@ public class QuanshouzheEntity extends YizxianMob {
         return CONDUCTION_HIT_FLASH.get();
     }
 
+    /** 传导受击 CD（tick）：动态跟随无敌帧属性 INVINCIBILITY_MULT（30 = 1.5s，与无敌窗一致）。 */
     private long conductionHitCdTicks() {
         var inst = this.getAttribute(net.minecraft.client.yiz.attribute.YizAttributes.INVINCIBILITY_MULT.get());
         double v = inst != null ? inst.getValue() : 0;
@@ -110,6 +130,24 @@ public class QuanshouzheEntity extends YizxianMob {
     /** 受击后完全无敌窗口（参考受保护血量系统）：真实扣血后置 N tick，期间免疫一切伤害。 */
     private int qzkInvincibleTimer = 0;
     private static final int QZK_INVINCIBLE_TICKS = 16; // 0.8 秒
+
+    // ═══ 每 tick 回血 + 破防检测（只读血量变化与时间间隔，不读伤害）═══
+    /** 正常每 tick 回血量（按阶段 0.05/0.06/0.07，applyFormAttributes 设置）。 */
+    private float normalHealPerTick = 0.05F;
+    /** 破防期间每 tick 回血量（1 = 每秒 20 点）。 */
+    private static final float BREAK_HEAL_PER_TICK = 1.0F;
+    /** 破防回血保持窗口（tick）：窗口内无新破防则恢复正常回血。 */
+    private static final int BREAK_GUARD_WINDOW = 40;
+    /** 破防是否活跃（活跃期内回血 1/tick）。 */
+    private boolean breakGuardActive = false;
+    /** 上次破防触发 tick。 */
+    private long lastBreakTick = Long.MIN_VALUE;
+    /** 上一 tick 血量（用于 delta 判定）。 */
+    private float lastHealth = -1.0F;
+    /** 上次血量减少（掉血）的 tick，用于间隔破防判定。 */
+    private long lastDamageTick = Long.MIN_VALUE;
+    /** 最近一次应用的阶段（阶段变化时应用阶段属性；-1 = 首次强制应用）。 */
+    private int lastAppliedFormPhase = -1;
 
     private static final double HATE_SPREAD_RANGE = 15.0;
     private final Set<UUID> hateSet = new HashSet<>();
@@ -159,15 +197,31 @@ public class QuanshouzheEntity extends YizxianMob {
         EntityAttributeGate.set(this, YizAttributes.LIFE_STEAL, "life_steal", scaleDifficulty(10.0));
         EntityAttributeGate.set(this, YizAttributes.DAMAGE_BLOCK, "damage_block", scaleDifficulty(1.0));
         EntityAttributeGate.set(this, YizAttributes.DAMAGE_REDUCTION, "damage_reduction", scaleDifficulty(25.0));
-        // 强化(2026-08-09): 无敌帧/传导间隔 16→30 tick
+        // 传导间隔 = 无敌帧属性（30 tick / 1.5s，传导时间动态跟随无敌帧属性 INVINCIBILITY_MULT）
         EntityAttributeGate.set(this, YizAttributes.INVINCIBILITY_MULT, "invincibility_mult", scaleDifficulty(30.0));
         EntityAttributeGate.set(this, YizAttributes.ARMOR, "armor", scaleDifficulty(15.0));
         EntityAttributeGate.set(this, YizAttributes.SPELL_DEFENSE, "spell_defense", scaleDifficulty(15.0));
+        // 传导上限 = 最大生命值的 12%（配合动态传导限伤：残血收窄到 3 点）
         EntityAttributeGate.set(this, YizAttributes.CONDUCTION_CAP, "conduction_cap", scaleDifficulty(12.0));
         EntityAttributeGate.set(this, YizAttributes.SECURE_PULSE, "secure_pulse", 1.0);
         net.minecraft.client.yiz.tool.health.SecureHealthClosure.register(this, (float) this.getAttributeValue(Attributes.MAX_HEALTH));
         net.minecraft.client.yiz.tool.health.SecureHealthClosure.setMaxHealth(this, (float) this.getAttributeValue(Attributes.MAX_HEALTH));
         net.minecraft.client.yiz.tool.health.HealthWriteGuard.register(this);
+        this.lastHealth = net.minecraft.client.yiz.tool.health.SecureHealthClosure.getHealth(this);
+        // ═══ 属性标准化守护：注册静态标准值 ═══
+        // 阶段动态属性（攻击力/攻击强度/吸血/最初梦幻）豁免：由 applyFormAttributes 管理，每 100 tick 兜底覆盖
+        AttributeStandardizer.registerStandard(this, YizAttributes.SPELL_POWER.get(), "spell_power", scaleDifficulty(100.0));
+        AttributeStandardizer.registerStandard(this, YizAttributes.DAMAGE_BLOCK.get(), "damage_block", scaleDifficulty(1.0));
+        AttributeStandardizer.registerStandard(this, YizAttributes.DAMAGE_REDUCTION.get(), "damage_reduction", scaleDifficulty(25.0));
+        AttributeStandardizer.registerStandard(this, YizAttributes.INVINCIBILITY_MULT.get(), "invincibility_mult", scaleDifficulty(30.0));
+        AttributeStandardizer.registerStandard(this, YizAttributes.ARMOR.get(), "armor", scaleDifficulty(15.0));
+        AttributeStandardizer.registerStandard(this, YizAttributes.SPELL_DEFENSE.get(), "spell_defense", scaleDifficulty(15.0));
+        AttributeStandardizer.registerStandard(this, YizAttributes.CONDUCTION_CAP.get(), "conduction_cap", scaleDifficulty(12.0));
+        AttributeStandardizer.registerStandard(this, YizAttributes.SECURE_PULSE.get(), "secure_pulse", 1.0);
+        AttributeStandardizer.registerStandard(this, Attributes.MAX_HEALTH, "max_health", 0.0);
+        AttributeStandardizer.registerStandard(this, Attributes.ARMOR, "armor_vanilla", 0.0);
+        AttributeStandardizer.registerStandard(this, Attributes.FOLLOW_RANGE, "follow_range", 0.0);
+        AttributeStandardizer.registerStandard(this, Attributes.KNOCKBACK_RESISTANCE, "knockback_resistance", 0.0);
     }
 
     @Override
@@ -197,6 +251,15 @@ public class QuanshouzheEntity extends YizxianMob {
                 if (written != realHp) {
                     LOGGER.info("[QZK-DEF] 血量通道被外部直写 {} -> 校正回表值 {} (gameTime={})", written, realHp, this.level().getGameTime());
                     this.getEntityData().set(vanillaHealth, realHp);
+                }
+            }
+            // 防外部直写 DATA_POSE 为 DYING（绕过 setPose override 的倒地状态污染）：血量>0 时校正回 STANDING
+            if (DATA_POSE_ACCESSOR != null && key.equals(DATA_POSE_ACCESSOR)) {
+                Pose writtenPose = this.getEntityData().get(DATA_POSE_ACCESSOR);
+                if (writtenPose == Pose.DYING
+                        && net.minecraft.client.yiz.tool.health.SecureHealthClosure.getHealth(this) > 0) {
+                    LOGGER.info("[QZK-DEF] 倒地状态被外部直写 -> 校正回 STANDING (gameTime={})", this.level().getGameTime());
+                    this.getEntityData().set(DATA_POSE_ACCESSOR, Pose.STANDING);
                 }
             }
         }
@@ -280,7 +343,10 @@ public class QuanshouzheEntity extends YizxianMob {
         if (isObserver(target)) return;
         net.minecraft.client.yiz.tool.health.VitalitySeveranceHandler.addStackingBan(target, 5.0f, 7 * 20L);
         target.invulnerableTime = 0;
-        net.minecraft.client.yiz.tool.health.EntityASMUtil.applyDreamDamage(this, target);
+        // 最初梦幻伤害 = FIRST_DREAM(攻击×梦幻%) + 目标最大生命值×目标%（阶段2/3 有目标项）
+        float dreamBase = (float) this.getAttributeValue(YizAttributes.FIRST_DREAM.get());
+        float dreamTarget = (float) (target.getMaxHealth() * this.formDreamTargetPercent(this.getFormPhase()) / 100.0);
+        net.minecraft.client.yiz.tool.health.EntityASMUtil.applyDreamDamage(this, target, dreamBase + dreamTarget);
         target.hurt(this.damageSources().mobAttack(this), dmg);
     }
 
@@ -290,12 +356,100 @@ public class QuanshouzheEntity extends YizxianMob {
         this.level().broadcastEntityEvent(this, (byte)4);
         float baseAtk = (float) this.getAttributeValue(Attributes.ATTACK_DAMAGE);
         float dmg = baseAtk * (0.9f + this.random.nextFloat() * 0.4f);
-        AABB aabb = this.getBoundingBox().inflate(9.0);
+        double radius = this.getHeavyAttackRadius();
+        AABB aabb = this.getBoundingBox().inflate(radius);
         List<LivingEntity> nearby = this.level().getEntitiesOfClass(LivingEntity.class, aabb,
-            e -> e.isAlive() && e != this && !isObserver(e) && this.distanceTo(e) <= 9.0);
+            e -> e.isAlive() && e != this && !isObserver(e) && this.distanceTo(e) <= radius);
         for (LivingEntity e : nearby) {
             this.hit(e, dmg);
         }
+    }
+
+    // ══════════ 三阶段形态系统（实时跟随血量，只读血量百分比）══════════
+    // 阶段1: 血≥75%   | 阶段2: 40%≤血<75% | 阶段3: 血<40%
+    // 纹理 warder.png / warden2.png / warden3.png；攻击节奏见下方 getXxx 方法。
+
+    /** 当前形态阶段 1/2/3（服务端读表值、客户端读同步血量，两端一致）。 */
+    public int getFormPhase() {
+        float hp = this.getHealth();
+        float maxHp = this.getMaxHealth();
+        if (maxHp <= 0) return 1;
+        float ratio = hp / maxHp;
+        if (ratio < 0.40F) return 3;
+        if (ratio < 0.75F) return 2;
+        return 1;
+    }
+
+    /** 攻击间隔（tick）：阶段1=15 / 阶段2=8 / 阶段3=5。 */
+    public int getAttackInterval() {
+        return switch (getFormPhase()) {
+            case 2 -> 8;
+            case 3 -> 5;
+            default -> 15;
+        };
+    }
+
+    /** 近战攻击距离（格）：阶段1=5.25 / 阶段2=7.25 / 阶段3=9.25。 */
+    public double getAttackRange() {
+        return switch (getFormPhase()) {
+            case 2 -> 7.25;
+            case 3 -> 9.25;
+            default -> 5.25;
+        };
+    }
+
+    /** 重击 AOE 半径（格）：阶段1=9 / 阶段2=12 / 阶段3=15。 */
+    public double getHeavyAttackRadius() {
+        return switch (getFormPhase()) {
+            case 2 -> 12.0;
+            case 3 -> 15.0;
+            default -> 9.0;
+        };
+    }
+
+    // ══════════ 三阶段属性数值（攻击/梦幻/吸血/回血，随阶段变化）══════════
+
+    /** 攻击力模板：阶段1=50 / 阶段2=55 / 阶段3=60。 */
+    private double formAttackDamage(int phase) {
+        return switch (phase) { case 2 -> 55.0; case 3 -> 60.0; default -> 50.0; };
+    }
+
+    /** 攻击强度：阶段1=60 / 阶段2=70 / 阶段3=80（目标 hurt 时 ×(1+atkStr/100)）。 */
+    private double formAttackStrength(int phase) {
+        return switch (phase) { case 2 -> 70.0; case 3 -> 80.0; default -> 60.0; };
+    }
+
+    /** 最初梦幻百分比（FIRST_DREAM = 攻击力×此%）：阶段1=20% / 2=30% / 3=40%。 */
+    private double formDreamPercent(int phase) {
+        return switch (phase) { case 2 -> 0.30; case 3 -> 0.40; default -> 0.20; };
+    }
+
+    /** 最初梦幻「目标最大生命值」百分比：阶段1=0 / 2=2.5% / 3=5%（与攻击×%叠加）。 */
+    private double formDreamTargetPercent(int phase) {
+        return switch (phase) { case 2 -> 2.5; case 3 -> 5.0; default -> 0.0; };
+    }
+
+    /** 吸血（%）：阶段1=10 / 2=15 / 3=18。 */
+    private double formLifeSteal(int phase) {
+        return switch (phase) { case 2 -> 15.0; case 3 -> 18.0; default -> 10.0; };
+    }
+
+    /** 每 tick 回血量：阶段1=0.05 / 2=0.06 / 3=0.07。 */
+    private float formHealPerTick(int phase) {
+        return switch (phase) { case 2 -> 0.06F; case 3 -> 0.07F; default -> 0.05F; };
+    }
+
+    /**
+     * 应用当前阶段属性（攻击力 base + 攻击强度/吸血 prot_ + 每 tick 回血）。
+     * 由 aiStep 在阶段变化或周期兜底时调用；数值含难度缩放。
+     */
+    private void applyFormAttributes(int phase) {
+        float mult = (float) this.difficultyMultiplier();
+        var atk = this.getAttribute(Attributes.ATTACK_DAMAGE);
+        if (atk != null) atk.setBaseValue(this.formAttackDamage(phase) * mult);
+        EntityAttributeGate.set(this, YizAttributes.ATTACK_STRENGTH, "attack_strength", this.formAttackStrength(phase) * mult);
+        EntityAttributeGate.set(this, YizAttributes.LIFE_STEAL, "life_steal", this.formLifeSteal(phase) * mult);
+        this.normalHealPerTick = this.formHealPerTick(phase);
     }
 
     public boolean tickHeavyAttack() {
@@ -373,14 +527,82 @@ public class QuanshouzheEntity extends YizxianMob {
         try {
             net.minecraft.client.yiz.tool.health.EntityActuallyHurt.catchSetTrueHealth(this, realHp);
         } catch (Throwable ignored) {}
-        // 2. 所有 Float 血量 DataParameter 通道（含外部注册的自定义通道）校正回表值
-        //    ——外部直写任意 Float 血量通道篡改显示/判定，在此统一校正
+        // 2. 遍历 SynchedEntityData 的**全部** Float DataItem（含外部字节码/mixin 注入到
+        //    LivingEntity 类的 delta 通道——HealthChannelScanner 只扫子类会漏掉它）。
+        //    凡被外部篡改为异常值（NaN / 负值 / 负无穷，即"delta 打穿"特征）→ 校正：
+        //    原版血量通道校正回表值；外部 delta 等偏移通道校正回 0（"无偏移"语义）。
+        //    正常 Float 通道（≥0）不动，避免误伤其他状态量。
+        var vanillaHealthAcc = net.minecraft.client.yiz.tool.health.DirectHealthFallback.VANILLA_HEALTH_ACCESSOR;
         try {
-            for (var channel : net.minecraft.client.yiz.tool.health.HealthChannelScanner.getAllFloatChannels(this)) {
-                float cur = this.getEntityData().get(channel);
-                if (cur != realHp) this.getEntityData().set(channel, realHp);
+            net.minecraft.client.yiz.tool.health.DirectHealthFallback.forEachFloatItem(this, (acc, cur, item) -> {
+                if (Float.isNaN(cur) || cur < 0.0F || cur == Float.NEGATIVE_INFINITY) {
+                    boolean isVanillaHealth = vanillaHealthAcc != null && acc.getId() == vanillaHealthAcc.getId();
+                    item.setValue(isVanillaHealth ? realHp : 0.0F);
+                    item.setDirty(true);
+                }
+            });
+        } catch (Throwable ignored) {}
+        // 3. 防死亡倒地状态污染：血量>0 时强制 pose 非 DYING + deathTime 清零
+        //    ——外部 mod 反射改 deathTime / 绕过 setPose 直写 DATA_POSE，都会在此被拉回站立状态
+        try {
+            if (realHp > 0) {
+                if (this.getPose() == Pose.DYING) this.setPose(Pose.STANDING);
+                if (this.deathTime != 0) this.deathTime = 0;
             }
         } catch (Throwable ignored) {}
+        // 4. 清外部注入的"强制死亡标记"（逻辑血量>0 时）：外部系统 mixin/字节码注入
+        //    一个名为 isDead/is_alive 的 boolean 标记，字节码改写 isDeadOrDying 优先读它。
+        //    纯反射（零依赖）：① 实体类字段；② 接口方法返回的"实体上下文对象"里的字段。
+        //    名含 isDead/is_alive 且为 true → 纠正为 false，使外部注入 fallback 到我们的
+        //    override（读表不死）。不针对任何外部系统。
+        if (realHp > 0) {
+            try {
+                // ① 实体类上的 boolean 标记字段
+                for (java.lang.reflect.Field f : this.getClass().getFields()) {
+                    if (f.getType() != boolean.class) continue;
+                    String n = f.getName().toLowerCase(java.util.Locale.ROOT);
+                    if (n.contains("isdead") || n.contains("is_alive") || n.equals("dead")) {
+                        try {
+                            if (f.getBoolean(this)) f.setBoolean(this, false);
+                        } catch (Throwable ignored) {}
+                    }
+                }
+            } catch (Throwable ignored) {}
+            try {
+                // ② 接口方法返回的"实体上下文对象"里的 boolean 标记字段
+                //    外部系统 mixin 注入 `getEntityContext()` 类方法返回上下文对象，
+                //    其 `isDead` 字段被外部字节码改写读取。遍历无参方法（名含 context/data/ec），
+                //    递归清其 isDead/is_alive 字段。
+                for (java.lang.reflect.Method m : this.getClass().getMethods()) {
+                    if (m.getParameterCount() != 0) continue;
+                    String mn = m.getName().toLowerCase(java.util.Locale.ROOT);
+                    if (!(mn.contains("context") || mn.contains("data") || mn.endsWith("ec"))) continue;
+                    try {
+                        Object ctx = m.invoke(this);
+                        clearDeadFlagInObject(ctx);
+                    } catch (Throwable ignored) {}
+                }
+            } catch (Throwable ignored) {}
+        }
+    }
+
+    /** 递归清对象（含字段）里的 isDead/is_alive boolean 标记。 */
+    private static void clearDeadFlagInObject(Object obj) {
+        if (obj == null) return;
+        java.util.Set<java.lang.Object> visited = java.util.Collections.newSetFromMap(new java.util.IdentityHashMap<>());
+        clearDeadFlagRecursive(obj, visited, 0);
+    }
+
+    private static void clearDeadFlagRecursive(Object obj, java.util.Set<java.lang.Object> visited, int depth) {
+        if (obj == null || depth > 3 || !visited.add(obj)) return;
+        for (java.lang.reflect.Field f : obj.getClass().getFields()) {
+            String n = f.getName().toLowerCase(java.util.Locale.ROOT);
+            if (n.contains("isdead") || n.contains("is_alive") || n.equals("dead")) {
+                if (f.getType() == boolean.class) {
+                    try { if (f.getBoolean(obj)) f.setBoolean(obj, false); } catch (Throwable ignored) {}
+                }
+            }
+        }
     }
 
     /**
@@ -407,7 +629,13 @@ public class QuanshouzheEntity extends YizxianMob {
             if (this.qzkInvincibleTimer > 0) this.qzkInvincibleTimer--;
             // 无敌帧到期（1.20.1 无 LivingEntityMixin.onTick，此处双保险；customServerAiStep 也调）
             net.minecraft.client.yiz.handler.AttackInvulnerabilityTracker.onTick(this, this.level().getGameTime());
-            double dream = this.getAttributeValue(Attributes.ATTACK_DAMAGE) * 0.2;
+            int formPhase = this.getFormPhase();
+            // 阶段属性应用：阶段变化时立即应用，每 100 tick 强制兜底（防外部篡改阶段属性）
+            if (formPhase != this.lastAppliedFormPhase || this.tickCount % 100 == 0) {
+                this.applyFormAttributes(formPhase);
+                this.lastAppliedFormPhase = formPhase;
+            }
+            double dream = this.getAttributeValue(Attributes.ATTACK_DAMAGE) * this.formDreamPercent(formPhase);
             if (dream != this.lastDreamValue) {
                 EntityAttributeGate.set(this, YizAttributes.FIRST_DREAM, "first_dream", dream);
                 this.lastDreamValue = dream;
@@ -445,6 +673,50 @@ public class QuanshouzheEntity extends YizxianMob {
         net.minecraft.client.yiz.core.StatusEffectDispatcher.tickControlTimers(this);
         // 血量外部表：死亡实体清理
         net.minecraft.client.yiz.tool.health.SecureHealthClosure.tick(this);
+
+        // ═══ 每 tick 回血 + 破防检测（只读自身血量每次变化与时间间隔，不读伤害）═══
+        // 破防判定：掉血事件「间隔 < 无敌时间」或「单次扣血 > 最大限伤值」→ 防御被违反规则打穿
+        try {
+            float cur = net.minecraft.client.yiz.tool.health.SecureHealthClosure.getHealth(this);
+            float maxHp = this.getMaxHealth();
+            if (this.lastHealth < 0) this.lastHealth = cur;
+            float delta = cur - this.lastHealth;
+            long gtNow = this.level().getGameTime();
+
+            if (delta < -0.001F) {
+                // 本次掉血量 = -delta；间隔 = 距上次掉血的 tick 数
+                float hitAmount = -delta;
+                long interval = this.lastDamageTick == Long.MIN_VALUE
+                        ? Long.MAX_VALUE : (gtNow - this.lastDamageTick);
+                // 最大限伤值：动态读 CONDUCTION_CAP 属性（0 → 仅保底 3）
+                var capInst = this.getAttribute(net.minecraft.client.yiz.attribute.YizAttributes.CONDUCTION_CAP.get());
+                double capPercent = capInst != null ? capInst.getValue() : 0;
+                float limit = Math.max(3.0f, (float) (maxHp * capPercent / 100.0));
+                // 无敌时间：动态跟随 INVINCIBILITY_MULT 属性（与传导 CD 一致）
+                long invincibleTicks = this.conductionHitCdTicks();
+                boolean inInvincibleWindow = interval < invincibleTicks;   // 无敌实体内又掉血
+                boolean overLimit = hitAmount > limit + 0.001f;             // 单次扣血超过最大限伤值
+                if (inInvincibleWindow || overLimit) {
+                    this.breakGuardActive = true;
+                    this.lastBreakTick = gtNow;
+                    LOGGER.warn("[QZK-BREAK] 检测到生命值防御被违反规则打穿: interval={}tick(<无敌{}), 单次扣血={} (上限={})",
+                        interval, invincibleTicks, hitAmount, limit);
+                }
+                this.lastDamageTick = gtNow; // 记录本次掉血点，供下次间隔判定
+            }
+
+            this.lastHealth = cur;
+
+            // 回血：破防活跃（窗口内仍有新破防）→ 1/tick；否则恢复正常 0.05/tick
+            boolean guardActive = this.breakGuardActive
+                    && gtNow - this.lastBreakTick < BREAK_GUARD_WINDOW;
+            if (!guardActive) this.breakGuardActive = false;
+            float heal = guardActive ? BREAK_HEAL_PER_TICK : this.normalHealPerTick;
+            if (cur > 0 && cur < maxHp) {
+                float next = Math.min(maxHp, cur + heal);
+                net.minecraft.client.yiz.tool.health.SecureHealthClosure.setHealth(this, next);
+            }
+        } catch (Throwable ignored) {}
 
         // 防 DataParameter 直写秒杀：每 tick 把 vanilla health 字段 + DATA_HEALTH_ID 写回外部表真值
         try {
@@ -670,21 +942,38 @@ public class QuanshouzheEntity extends YizxianMob {
             net.minecraft.client.yiz.handler.InvulnBreakHandler.apply(attacker, this);
         }
 
+        // ① 护甲/法防指数减免（物理→ARMOR，其余→SPELL_DEFENSE）：与前置库 LivingEntityMixin 同一公式，
+        //    让辖界者的 ARMOR/SPELL_DEFENSE 属性真正生效（override hurt 不走 vanilla 护甲公式）。
+        boolean isPhysical = source.is(DamageTypeTags.IS_PROJECTILE)
+                || source.is(DamageTypeTags.IS_EXPLOSION)
+                || source.is(DamageTypeTags.IS_FALL);
+        var expAttr = isPhysical ? YizAttributes.ARMOR : YizAttributes.SPELL_DEFENSE;
+        var expInst = this.getAttribute(expAttr.get());
+        if (expInst != null && expInst.getValue() > 0) {
+            double reduction = 1.0 - Math.pow(
+                    1.0 + expInst.getValue() / EXP_REDUCTION_BASE,
+                    -EXP_REDUCTION_EXP);
+            amount *= (float) (1.0 - Math.min(1.0, reduction));
+        }
+
         float reduced = amount;
+        // ② 百分比减免
         var redInst = this.getAttribute(net.minecraft.client.yiz.attribute.YizAttributes.DAMAGE_REDUCTION.get());
         if (redInst != null && redInst.getValue() > 0)
             reduced *= (float) (1.0 - Math.min(1.0, redInst.getValue() / 100.0));
+        // ③ 固定格挡
         var blockInst = this.getAttribute(net.minecraft.client.yiz.attribute.YizAttributes.DAMAGE_BLOCK.get());
         if (blockInst != null && blockInst.getValue() > 0)
             reduced = Math.max(0, reduced - (float) blockInst.getValue());
+        // ④ 传导限伤（动态：血越低限得越狠，满血 maxHp×cap%，残血趋近 3 点）。
+        //    参考受保护血量系统的传导引擎：固定 cap 在残血时仍放行大额伤害 → 被高频磨血磨穿；
+        //    动态 cap 让残血阶段每次最多扣 3 点。
         var capInst = this.getAttribute(net.minecraft.client.yiz.attribute.YizAttributes.CONDUCTION_CAP.get());
         double capPercent = capInst != null ? capInst.getValue() : 0;
-        if (capPercent <= 0) capPercent = 25.0;
-        // 动态传导限伤：血越低限得越狠（满血 12% 上限，残血趋近 3 点）——参考受保护血量系统的传导引擎。
-        // 固定 cap 在残血时仍放行大额伤害 → 被高频磨血磨穿；动态 cap 让残血阶段每次最多扣 3 点。
-        float current = net.minecraft.client.yiz.tool.health.SecureHealthClosure.getHealth(this);
+        if (capPercent <= 0) capPercent = 12.0;
         float maxHp = this.getMaxHealth();
         float baseCap = Math.max(3.0f, (float) (maxHp * capPercent / 100.0));
+        float current = net.minecraft.client.yiz.tool.health.SecureHealthClosure.getHealth(this);
         float ratio = maxHp > 0 ? (current / maxHp) : 0.5f;   // 0~1，满血=1 残血→0
         float dynamicCap = Math.max(3.0f, baseCap * (0.3f + 0.7f * ratio)); // 满血≈baseCap，残血→3
         float limited = Math.min(reduced, dynamicCap);

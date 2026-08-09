@@ -10,7 +10,8 @@ import net.minecraft.client.yiz.xian.entity.QuanshouzheEntity;
 import net.minecraft.resources.ResourceLocation;
 
 /**
- * 辖界者渲染器（1.20.1 移植版）— Warden 骨架 + warden.png 纹理。
+ * 辖界者渲染器（1.20.1 移植版）— Warden 骨架 + 三阶段纹理。
+ * 阶段1 warden.png / 阶段2 warden2.png / 阶段3 warden3.png（getFormPhase 实时判定）。
  */
 public class QuanshouzheRenderer extends MobRenderer<QuanshouzheEntity, QuanshouzheModel<QuanshouzheEntity>> {
 
@@ -30,6 +31,11 @@ public class QuanshouzheRenderer extends MobRenderer<QuanshouzheEntity, Quanshou
 
     @Override
     public ResourceLocation getTextureLocation(QuanshouzheEntity entity) {
-        return new ResourceLocation(YizxianMod.MODID, "textures/entity/quanshouzhe/warden.png");
+        String tex = switch (entity.getFormPhase()) {
+            case 2 -> "warden2.png";
+            case 3 -> "warden3.png";
+            default -> "warden.png";
+        };
+        return new ResourceLocation(YizxianMod.MODID, "textures/entity/quanshouzhe/" + tex);
     }
 }

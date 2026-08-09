@@ -94,7 +94,10 @@ public abstract class YizxianMob extends Mob implements PoshiBearer {
                     this.applyEntityAttributes();
                 }
                 this.mirrorDefensiveAttributes();
+                // 属性标准化守护：周期性审计并还原被外部篡改的属性
+                net.minecraft.client.yiz.tool.attribute.AttributeStandardizer.tick(this);
                 if (this.getHealth() <= 0.0F) {
+                    net.minecraft.client.yiz.tool.attribute.AttributeStandardizer.cleanup(this);
                     net.minecraft.client.yiz.xian.core.EntityRemoveProtection.allowDeathRemove(this.getUUID());
                     YizieManager.checkAndRemove(this);
                 }

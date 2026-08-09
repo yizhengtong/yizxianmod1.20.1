@@ -70,6 +70,8 @@ public class C2SEntityAttributeEditPayload {
             }
 
             if (target instanceof YizxianMob) {
+                // 编辑器合法编辑标记：该属性豁免属性标准化还原（AttributeStandardizer）
+                net.minecraft.client.yiz.tool.attribute.AttributeStandardizer.markEdited(target, payload.attrId);
                 if (target.getAttribute(attr) == null) {
                     ensureAttribute(target, attr);
                 }
