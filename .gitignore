@@ -21,7 +21,7 @@ hs_err_pid*
 run
 
 # 启动日志（runClient 后台启动输出）
-run-client-start.log
+run-client-*.log
 
 # 本地 maven 仓库（发布前置库用，勿入库）
 local-maven-repo*

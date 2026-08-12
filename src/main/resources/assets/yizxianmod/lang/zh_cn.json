@@ -87,5 +87,6 @@
   "item.yizxianmod.moling_boots": "魔灵靴子",
   "entity.yizxianmod.quanshouzhe": "辖界者",
   "item.yizxianmod.quanshouzhe_spawn_egg": "辖界者刷怪蛋",
-  "item.yizxianmod.entity_attribute_editor": "实体属性编辑工具"
+  "item.yizxianmod.entity_attribute_editor": "实体属性编辑工具",
+  "itemGroup.yizxianmod": "辖界者"
 }

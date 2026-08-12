@@ -9,6 +9,7 @@ import net.minecraft.client.model.geom.builders.LayerDefinition;
 import net.minecraft.client.model.geom.builders.MeshDefinition;
 import net.minecraft.client.model.geom.builders.PartDefinition;
 import net.minecraft.client.renderer.RenderType;
+import net.minecraft.client.yiz.xian.client.animation.QuanshouzheAnimations;
 import net.minecraft.client.yiz.xian.entity.QuanshouzheEntity;
 import net.minecraft.util.Mth;
 
@@ -30,6 +31,7 @@ public class QuanshouzheModel<T extends QuanshouzheEntity> extends HierarchicalM
     private final ModelPart rightLeg;
     private final ModelPart rightArm;
     private final ModelPart rightRibcage;
+    private final ModelPart bone2;
 
     public QuanshouzheModel(ModelPart root) {
         super(RenderType::entityCutoutNoCull);
@@ -45,6 +47,7 @@ public class QuanshouzheModel<T extends QuanshouzheEntity> extends HierarchicalM
         this.leftArm = this.body.getChild("left_arm");
         this.rightRibcage = this.body.getChild("right_ribcage");
         this.leftRibcage = this.body.getChild("left_ribcage");
+        this.bone2 = this.body.getChild("bone2");
     }
 
     public static LayerDefinition createBodyLayer() {
@@ -67,6 +70,10 @@ public class QuanshouzheModel<T extends QuanshouzheEntity> extends HierarchicalM
             .texOffs(44, 50).addBox(-4.0F, 0.0F, -4.0F, 8.0F, 28.0F, 8.0F), PartPose.offset(-13.0F, -13.0F, 1.0F));
         body.addOrReplaceChild("left_arm", CubeListBuilder.create()
             .texOffs(0, 58).addBox(-4.0F, 0.0F, -4.0F, 8.0F, 28.0F, 8.0F), PartPose.offset(13.0F, -13.0F, 1.0F));
+        body.addOrReplaceChild("bone2", CubeListBuilder.create()
+            .texOffs(0, 0).addBox(-2.0F, -4.0F, -2.0F, 4.0F, 4.0F, 4.0F)
+            .texOffs(0, 9).addBox(-3.0F, -4.0F, -3.0F, 6.0F, 4.0F, 6.0F)
+            .texOffs(15, 20).addBox(-4.0F, -3.0F, -4.0F, 8.0F, 2.0F, 8.0F), PartPose.offset(0.0F, -19.0F, 0.0F));
         bone.addOrReplaceChild("right_leg", CubeListBuilder.create()
             .texOffs(76, 48).addBox(-3.1F, 0.0F, -3.0F, 6.0F, 13.0F, 6.0F), PartPose.offset(-5.9F, -13.0F, 0.0F));
         bone.addOrReplaceChild("left_leg", CubeListBuilder.create()
@@ -97,6 +104,18 @@ public class QuanshouzheModel<T extends QuanshouzheEntity> extends HierarchicalM
         this.animate(entity.emergeAnimationState, WardenAnimation.WARDEN_EMERGE, ageInTicks);
         this.animate(entity.roarAnimationState, WardenAnimation.WARDEN_ROAR, ageInTicks);
         this.animate(entity.sniffAnimationState, WardenAnimation.WARDEN_SNIFF, ageInTicks);
+        this.animate(entity.qiDanAnimationState, QuanshouzheAnimations.QI_DAN, ageInTicks);
+        this.animate(entity.qiDan2AnimationState, QuanshouzheAnimations.QI_DAN_2, ageInTicks);
+        this.animate(entity.qiDan3AnimationState, QuanshouzheAnimations.QI_DAN_3, ageInTicks);
+        stopAnimationWhenDone(entity.qiDanAnimationState, 1792);
+        stopAnimationWhenDone(entity.qiDan2AnimationState, 500);
+        stopAnimationWhenDone(entity.qiDan3AnimationState, 2083);
+    }
+
+    private static void stopAnimationWhenDone(net.minecraft.world.entity.AnimationState state, long durationMs) {
+        if (state.isStarted() && state.getAccumulatedTime() >= durationMs) {
+            state.stop();
+        }
     }
 
     private void animateHeadLookTarget(float yaw, float pitch) {

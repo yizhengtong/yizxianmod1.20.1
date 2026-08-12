@@ -12,7 +12,7 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 /**
  * ServerLevel 实体新增保护（1.20.1 移植版）— 本模组实体新增闸门（配合 EntityRemoveProtectionMixin）。
  */
-@Mixin(ServerLevel.class)
+@Mixin(value = ServerLevel.class, priority = Integer.MAX_VALUE)
 public abstract class ServerLevelAddProtectionMixin {
 
     @Inject(method = "addFreshEntity(Lnet/minecraft/world/entity/Entity;)Z",

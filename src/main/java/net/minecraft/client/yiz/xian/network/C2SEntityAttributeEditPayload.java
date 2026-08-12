@@ -14,6 +14,9 @@ import net.minecraftforge.registries.ForgeRegistries;
 
 import java.util.function.Supplier;
 
+import org.slf4j.Logger;
+import com.mojang.logging.LogUtils;
+
 /**
  * C2S: 实体属性编辑工具「应用」请求（1.20.1 移植版）。
  * 修改目标实体的 yizmodqzk 自定义属性值。
@@ -22,6 +25,8 @@ import java.util.function.Supplier;
  * 其他实体 → ItemAttributeHandler（普通 entity_ 前缀）。</p>
  */
 public class C2SEntityAttributeEditPayload {
+
+    private static final Logger LOGGER = LogUtils.getLogger();
 
     private final int targetId;
     private final String attrId;
@@ -80,6 +85,10 @@ public class C2SEntityAttributeEditPayload {
                     net.minecraftforge.registries.RegistryObject.create(
                         new ResourceLocation("yizmodqzk", payload.attrId), ForgeRegistries.ATTRIBUTES);
                 EntityAttributeGate.set(target, ro, payload.attrId, v);
+                // 诊断：确认服务端确实收到并写入编辑器值（实测"编辑器改属性是否实时生效"）
+                LOGGER.info("[AttrEdit] 写入 {} {} = {} (当前 getValue={})",
+                    target.getUUID(), payload.attrId, v,
+                    target.getAttribute(attr) != null ? target.getAttribute(attr).getValue() : -1);
             } else {
                 if (target.getAttribute(attr) == null) {
                     ensureAttribute(target, attr);
@@ -94,7 +103,7 @@ public class C2SEntityAttributeEditPayload {
     }
 
     /** 反射往目标实体 AttributeMap 注入 yizmodqzk 属性实例（非本模组实体未挂载时）。
-     *  ⚠️ 1.20.1：AttributeMap.attributes 是 Map<Attribute, AttributeInstance>（非 Holder）。 */
+     *   1.20.1：AttributeMap.attributes 是 Map<Attribute, AttributeInstance>（非 Holder）。 */
     private static void ensureAttribute(LivingEntity target, Attribute attr) {
         try {
             java.lang.reflect.Field f = net.minecraft.world.entity.ai.attributes.AttributeMap.class.getDeclaredField("attributes");

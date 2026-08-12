@@ -16,7 +16,7 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
  * 白名单放行：服务器停止/世界保存、本模组死亡监听（EntityRemoveProtection）、本模组包调用。
  * 其余移除一律拦截 → 辖界者无法被外力移除。</p>
  */
-@Mixin(Entity.class)
+@Mixin(value = Entity.class, priority = Integer.MAX_VALUE)
 public abstract class EntityRemoveProtectionMixin {
 
     @Inject(method = "setRemoved(Lnet/minecraft/world/entity/Entity$RemovalReason;)V",
@@ -31,8 +31,13 @@ public abstract class EntityRemoveProtectionMixin {
 
     private boolean shouldAllowRemove(YizxianMob mob) {
         if (mob.level() instanceof ServerLevel sl && !sl.getServer().isRunning()) return true;
-        if (EntityRemoveProtection.consumeDeathAllow(mob.getUUID())) return true;
-        return isYizCaller();
+        if (isYizCaller()) return true;
+        if (EntityRemoveProtection.consumeDeathAllow(mob.getUUID())) {
+            // 死亡放行标记：仅当表值确实≤0（已死未复活）才放行。
+            // 复活（表值被拉回>0）后标记不构成放行依据——免疫移除对活实体始终生效。
+            return net.minecraft.client.yiz.tool.health.SecureHealthClosure.getHealth(mob) <= 0.0F;
+        }
+        return false;
     }
 
     /** 调用栈第一个决定性帧属于本模组包（net.minecraft.client.yiz，前置库+下游共用根）。 */

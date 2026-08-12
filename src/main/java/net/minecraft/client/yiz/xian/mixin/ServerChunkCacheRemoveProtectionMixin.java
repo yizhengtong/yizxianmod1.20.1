@@ -23,7 +23,7 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
  * 与调用栈鉴权（isYizCaller）。服务器停止/世界卸载由 {@link EntityRemoveProtectionMixin}
  * 的 setRemoved 白名单放行，此处仅兜底外部直接 removeEntity 的路径。</p>
  */
-@Mixin(ServerChunkCache.class)
+@Mixin(value = ServerChunkCache.class, priority = Integer.MAX_VALUE)
 public abstract class ServerChunkCacheRemoveProtectionMixin {
 
     @Inject(method = "removeEntity(Lnet/minecraft/world/entity/Entity;)V",

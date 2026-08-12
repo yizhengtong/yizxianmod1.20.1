@@ -31,6 +31,12 @@ public final class NetworkHandler {
             C2SEntityAttributeEditPayload::handle
         );
         CHANNEL.registerMessage(packetId++,
+            C2SDreamAttackPayload.class,
+            C2SDreamAttackPayload::encode,
+            C2SDreamAttackPayload::decode,
+            C2SDreamAttackPayload::handle
+        );
+        CHANNEL.registerMessage(packetId++,
             S2CEntityTargetPayload.class,
             S2CEntityTargetPayload::encode,
             S2CEntityTargetPayload::decode,

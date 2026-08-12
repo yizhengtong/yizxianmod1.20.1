@@ -41,7 +41,7 @@ public class EntityAttributeEditScreen extends AbstractContainerScreen<EntityAtt
         new Entry("spell_defense",      "法术防御",   YizAttributes.SPELL_DEFENSE,      5),
         new Entry("vitality_severance_rate",     "绝妄生机率",   YizAttributes.VITALITY_SEVERANCE_RATE,     5),
         new Entry("vitality_severance_time",     "绝妄生机时间", YizAttributes.VITALITY_SEVERANCE_TIME,     1),
-        new Entry("first_dream",        "最初梦幻",   YizAttributes.FIRST_DREAM,        5),
+        new Entry("long_short",        "涨跌多空",   YizAttributes.FIRST_DREAM,        5),
         new Entry("conduction_cap",      "最大生命值限伤%", YizAttributes.CONDUCTION_CAP,  5)
     );
 

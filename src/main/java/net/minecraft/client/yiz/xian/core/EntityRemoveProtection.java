@@ -25,4 +25,9 @@ public final class EntityRemoveProtection {
     public static boolean consumeDeathAllow(UUID uuid) {
         return uuid != null && DEATH_ALLOW.remove(uuid);
     }
+
+    /** 撤销死亡放行（实体血量恢复/复活时调用，防标记残留被外部利用移除活实体）。 */
+    public static void revokeDeathAllow(UUID uuid) {
+        if (uuid != null) DEATH_ALLOW.remove(uuid);
+    }
 }

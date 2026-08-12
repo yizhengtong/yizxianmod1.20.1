@@ -11,6 +11,8 @@
     "ServerChunkCacheRemoveProtectionMixin"
   ],
   "client": [
+    "ChatComponentHistoryMixin",
+    "PlayerAttackMixin"
   ],
   "injectors": {
     "defaultRequire": 1

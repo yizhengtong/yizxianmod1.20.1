@@ -18,7 +18,7 @@ public final class YizxianEntityTypes {
         DeferredRegister.create(ForgeRegistries.ENTITY_TYPES, YizxianMod.MODID);
 
     /**
-     * 辖界者 Boss。碰撞箱按身体（脚→肩/头），体积放大 1.5 倍（与渲染 MODEL_SCALE 1.2 匹配）。
+     * 辖界者 Boss。碰撞箱按铁傀儡比例（1.4×2.8）。
      */
     public static final RegistryObject<EntityType<net.minecraft.client.yiz.xian.entity.QuanshouzheEntity>> QUANSHOUZHE =
         ENTITY_TYPES.register("quanshouzhe", () -> EntityType.Builder.of(
@@ -26,7 +26,7 @@ public final class YizxianEntityTypes {
              net.minecraft.world.level.Level level) ->
                 new net.minecraft.client.yiz.xian.entity.QuanshouzheEntity(type, level),
             MobCategory.MONSTER)
-            .sized(1.8f, 3.9f)
+            .sized(1.3f, 2.8f)
             .fireImmune()
             .build("quanshouzhe"));
 }
