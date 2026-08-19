@@ -33,8 +33,8 @@ public abstract class ServerChunkCacheRemoveProtectionMixin {
         if (entity.level().isClientSide()) return;
         // 本模组主动死亡移除（逻辑血量≤0）放行
         if (EntityRemoveProtection.consumeDeathAllow(entity.getUUID())) return;
-        // 服务器停止 / 世界卸载放行
-        if (entity.level() instanceof ServerLevel sl && !sl.getServer().isRunning()) return;
+        // 服务器停止 / 停机保存 / 世界卸载放行（isSaving 阶段也必须放行，否则存档写出被夹击）
+        if (entity.level() instanceof ServerLevel sl && EntityRemoveProtection.isShuttingDownOrSaving(sl)) return;
         // 本模组包调用（/yiz remove 等）放行
         if (isYizCaller()) return;
         // 外部模组直接移除辖界者 → 拦截

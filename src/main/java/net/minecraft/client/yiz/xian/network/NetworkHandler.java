@@ -42,5 +42,18 @@ public final class NetworkHandler {
             S2CEntityTargetPayload::decode,
             S2CEntityTargetPayload::handle
         );
+        // 光明指南针工作槽：C2S 操作 + S2C 内容同步
+        CHANNEL.registerMessage(packetId++,
+            C2SLightCompassWorkSlotPayload.class,
+            C2SLightCompassWorkSlotPayload::encode,
+            C2SLightCompassWorkSlotPayload::decode,
+            C2SLightCompassWorkSlotPayload::handle
+        );
+        CHANNEL.registerMessage(packetId++,
+            S2CLightCompassSlotsPayload.class,
+            S2CLightCompassSlotsPayload::encode,
+            S2CLightCompassSlotsPayload::decode,
+            S2CLightCompassSlotsPayload::handle
+        );
     }
 }

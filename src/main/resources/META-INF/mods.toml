@@ -68,3 +68,10 @@ mandatory = true
 versionRange = "[1.0,)"
 ordering = "NONE"
 side = "BOTH"
+# GeckoLib 动画库 dependency（踏虚体邪狱龙渲染）
+[[dependencies."${mod_id}"]]
+modId = "geckolib"
+mandatory = true
+versionRange = "[4.8.4,)"
+ordering = "NONE"
+side = "BOTH"

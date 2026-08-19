@@ -23,6 +23,12 @@ public final class YizxianMenus {
                 new EntityAttributeEditMenu(containerId, playerInventory,
                     data != null ? data.readInt() : -1)));
 
+    /** 光明指南针容器：工作槽 + 展示栏 + 搜索栏，无额外数据。 */
+    public static final RegistryObject<MenuType<LightCompassMenu>> LIGHT_COMPASS_MENU =
+        MENUS.register("light_compass", () -> IForgeMenuType.create(
+            (containerId, playerInventory, data) ->
+                new LightCompassMenu(containerId, playerInventory)));
+
     public static void register(IEventBus modEventBus) {
         MENUS.register(modEventBus);
     }

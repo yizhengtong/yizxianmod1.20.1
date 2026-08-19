@@ -1,6 +1,5 @@
 package net.minecraft.client.yiz.xian.mixin;
 
-import net.minecraft.client.yiz.xian.entity.QuanshouzheEntity;
 import net.minecraft.client.yiz.xian.entity.base.YizxianMob;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.damagesource.DamageSource;
@@ -21,7 +20,7 @@ public abstract class ServerLevelDamageFlashProtectionMixin {
             at = @At("HEAD"), cancellable = true)
     private void yizxianmod$gateDamageFlash(Entity entity, DamageSource damageSource, CallbackInfo ci) {
         if (!(entity instanceof YizxianMob)) return;
-        if (QuanshouzheEntity.isConductionHitFlash()) return;
+        if (YizxianMob.isConductionHitFlash()) return;
         ci.cancel();
     }
 }

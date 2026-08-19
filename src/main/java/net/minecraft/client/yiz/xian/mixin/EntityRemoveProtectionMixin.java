@@ -30,7 +30,7 @@ public abstract class EntityRemoveProtectionMixin {
     }
 
     private boolean shouldAllowRemove(YizxianMob mob) {
-        if (mob.level() instanceof ServerLevel sl && !sl.getServer().isRunning()) return true;
+        if (mob.level() instanceof ServerLevel sl && EntityRemoveProtection.isShuttingDownOrSaving(sl)) return true;
         if (isYizCaller()) return true;
         if (EntityRemoveProtection.consumeDeathAllow(mob.getUUID())) {
             // 死亡放行标记：仅当表值确实≤0（已死未复活）才放行。

@@ -35,6 +35,36 @@ public class YizxianMod {
         ITEMS.register("quanshouzhe_spawn_egg", () ->
             new net.minecraft.client.yiz.xian.item.QuanshouzheSpawnEggItem(new Item.Properties()));
 
+    /** 邪狱龙生物蛋（踏虚体邪狱龙，GeckoLib 动画 Boss）。 */
+    public static final RegistryObject<Item> XIEYULONG_SPAWN_EGG =
+        ITEMS.register("xieyulong_spawn_egg", () ->
+            new net.minecraft.client.yiz.xian.item.XieyulongSpawnEggItem(new Item.Properties()));
+
+    /** 踏虚体生物蛋（GeckoLib 动画 Boss）。 */
+    public static final RegistryObject<Item> TAXUTI_SPAWN_EGG =
+        ITEMS.register("taxuti_spawn_egg", () ->
+            new net.minecraft.client.yiz.xian.item.TaxutiSpawnEggItem(new Item.Properties()));
+
+    /** 山林首者生物蛋（GeckoLib 动画，铁傀儡属性）。 */
+    public static final RegistryObject<Item> SHANLINSHOUZHE_SPAWN_EGG =
+        ITEMS.register("shanlinshouzhe_spawn_egg", () ->
+            new net.minecraft.client.yiz.xian.item.ShanlinshouzheSpawnEggItem(new Item.Properties()));
+
+    // ── 辅助物品 ──────────────────────────────────────────────
+
+    /** 光明末影之眼：手持时给周围末地传送门框画穿墙发光轮廓。 */
+    public static final RegistryObject<Item> BRIGHT_ENDER_EYE =
+        ITEMS.register("bright_ender_eye", () -> new Item(new Item.Properties()));
+
+    /** 光明指南针：Shift+右键开配置 GUI，右键扫描高亮工作槽物品对应的方块/实体。 */
+    public static final RegistryObject<Item> BRIGHT_COMPASS =
+        ITEMS.register("bright_compass", () ->
+            new net.minecraft.client.yiz.xian.item.BrightCompassItem(new Item.Properties().stacksTo(1)));
+
+    /** 堆叠核心：铁砧左槽放目标物品、右槽放本物品，取出后该物品 ID 最大堆叠数 ×2（最多 2 次，封顶 99）。 */
+    public static final RegistryObject<Item> STACK_CORE =
+        ITEMS.register("stack_core", () -> new Item(new Item.Properties().stacksTo(64)));
+
     /** 创造模式标签页：生物蛋 + 编辑器。 */
     public static final DeferredRegister<net.minecraft.world.item.CreativeModeTab> CREATIVE_TABS =
         DeferredRegister.create(net.minecraft.core.registries.Registries.CREATIVE_MODE_TAB, MODID);
@@ -46,7 +76,23 @@ public class YizxianMod {
                 .icon(() -> new net.minecraft.world.item.ItemStack(QUANSHOUZHE_SPAWN_EGG.get()))
                 .displayItems((params, output) -> {
                     output.accept(QUANSHOUZHE_SPAWN_EGG.get());
+                    output.accept(XIEYULONG_SPAWN_EGG.get());
+                    output.accept(TAXUTI_SPAWN_EGG.get());
+                    output.accept(SHANLINSHOUZHE_SPAWN_EGG.get());
                     output.accept(ENTITY_ATTRIBUTE_EDITOR.get());
+                })
+                .build());
+
+    /** 辅助物品标签页。 */
+    public static final RegistryObject<net.minecraft.world.item.CreativeModeTab> AUXILIARY_TAB =
+        CREATIVE_TABS.register("auxiliary", () ->
+            net.minecraft.world.item.CreativeModeTab.builder()
+                .title(net.minecraft.network.chat.Component.translatable("itemGroup.yizxianmod.auxiliary"))
+                .icon(() -> new net.minecraft.world.item.ItemStack(BRIGHT_ENDER_EYE.get()))
+                .displayItems((params, output) -> {
+                    output.accept(BRIGHT_ENDER_EYE.get());
+                    output.accept(BRIGHT_COMPASS.get());
+                    output.accept(STACK_CORE.get());
                 })
                 .build());
 
@@ -68,6 +114,24 @@ public class YizxianMod {
                 net.minecraft.client.yiz.xian.entity.QuanshouzheEntity.createAttributes().build());
         });
 
+        // 实体属性创建（邪狱龙 AttributeSupplier）
+        modEventBus.addListener((net.minecraftforge.event.entity.EntityAttributeCreationEvent e) -> {
+            e.put(YizxianEntityTypes.XIEYULONG.get(),
+                net.minecraft.client.yiz.xian.entity.XieyulongEntity.createAttributes().build());
+        });
+
+        // 实体属性创建（踏虚体 AttributeSupplier）
+        modEventBus.addListener((net.minecraftforge.event.entity.EntityAttributeCreationEvent e) -> {
+            e.put(YizxianEntityTypes.TAXUTI.get(),
+                net.minecraft.client.yiz.xian.entity.TaxutiEntity.createAttributes().build());
+        });
+
+        // 实体属性创建（山林首者 AttributeSupplier）
+        modEventBus.addListener((net.minecraftforge.event.entity.EntityAttributeCreationEvent e) -> {
+            e.put(YizxianEntityTypes.SHANLINSHOUZHE.get(),
+                net.minecraft.client.yiz.xian.entity.ShanlinshouzheEntity.createAttributes().build());
+        });
+
         // 给玩家默认属性加涨跌多空（FIRST_DREAM/long_short，默认 0）：否则物品修饰符作用在玩家上时
         // getAttribute(FIRST_DREAM) 返回 null、修饰符不生效 → /yiz sx zddk 加的物品属性无效
         modEventBus.addListener((net.minecraftforge.event.entity.EntityAttributeModificationEvent e) -> {
@@ -77,6 +141,9 @@ public class YizxianMod {
 
         modEventBus.addListener(this::commonSetup);
         net.minecraftforge.common.MinecraftForge.EVENT_BUS.register(this);
+        // 堆叠核心：铁砧强化最大堆叠数（AnvilUpdateEvent / AnvilRepairEvent）
+        net.minecraftforge.common.MinecraftForge.EVENT_BUS.register(
+            net.minecraft.client.yiz.xian.item.StackCoreAnvilHandler.class);
     }
 
     private void commonSetup(final FMLCommonSetupEvent event) {

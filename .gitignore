@@ -29,3 +29,6 @@ local-maven-repo*
 *.sha1
 *.sha256
 *.sha512
+
+# 本地 runClient 启动日志
+runClient*.log

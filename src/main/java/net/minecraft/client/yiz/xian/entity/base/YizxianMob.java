@@ -5,6 +5,7 @@ import net.minecraft.client.yiz.editor.PoshiBypassBridge;
 import net.minecraft.client.yiz.tool.YizieManager;
 import net.minecraft.client.yiz.tool.attribute.EntityAttributeGate;
 import net.minecraft.server.level.ServerLevel;
+import net.minecraft.server.level.ServerChunkCache;
 import net.minecraft.world.effect.MobEffectInstance;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.EntityType;
@@ -17,7 +18,10 @@ import net.minecraft.world.phys.Vec3;
 
 import java.security.SecureRandom;
 import java.util.Arrays;
+import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
+import java.util.UUID;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import com.mojang.logging.LogUtils;
@@ -71,12 +75,28 @@ public abstract class YizxianMob extends Mob implements PoshiBearer {
     private long lastGatedTick = -1;
 
     private boolean yizxianAttrsApplied;
+    private boolean levelCallbackInstalled;
+    private volatile boolean reAddQueued;
+
+    /** 字段级位置保护：缓存最近一次安全位置，检测被外部直接写 position 字段异常传送后恢复。 */
+    private double safeX, safeY, safeZ;
+    private boolean safePosReady;
+    private boolean restoringPos;
 
     private double templateMaxHealth = -1;
     private double templateAttackDamage = -1;
 
     private double lastMirrorArmor = Double.NaN;
     private double lastMirrorSpellDefense = Double.NaN;
+
+    /** 实体身份快照：id/uuid/stringUUID 被外部直改后按原值恢复（通用防“毁对象式”清除，不针对任何模组）。 */
+    private int identityId = Integer.MIN_VALUE;
+    private UUID identityUuid;
+    private String identityStringUuid;
+    private boolean identityReady;
+
+    /** SafeLevelCallback 实例引用：外部把 levelCallback 直写为 NULL/其他回调后据此重装。 */
+    private SafeLevelCallback safeLevelCallback;
 
     protected YizxianMob(EntityType<? extends Mob> entityType, Level level) {
         super(entityType, level);
@@ -86,6 +106,8 @@ public abstract class YizxianMob extends Mob implements PoshiBearer {
 
     @Override
     public void aiStep() {
+        // 身份完整性必须在所有 UUID/registry 查询之前恢复（外部直改 id/uuid 会让不死注册表按错误键查找）
+        guardIdentity();
         withGate(() -> {
             boolean server = !this.level().isClientSide();
             if (server) {
@@ -96,6 +118,8 @@ public abstract class YizxianMob extends Mob implements PoshiBearer {
                     registerImmortal(this);   // 加入独立线程不死守卫注册表
                 }
                 this.mirrorDefensiveAttributes();
+                // 替换 levelCallback 为 SafeLevelCallback（拦截比 setRemoved 更底层的 onRemove 移除）
+                this.installSafeLevelCallback();
                 // 每 tick 强制校正（通用，不点名任何模组）：表值回写自身通道 + 清未知 Float delta + 防 removed/MAX_HEALTH 篡改
                 this.enforceSecureHealthState();
                 // 属性标准化守护：周期性审计并还原被外部篡改的属性
@@ -425,16 +449,148 @@ public abstract class YizxianMob extends Mob implements PoshiBearer {
     private static void registerImmortal(YizxianMob e) {
         if (e == null || e.level().isClientSide()) return;
         ensureGuardStarted();
-        IMMORTAL_REGISTRY.putIfAbsent(e.getUUID(), e);
+        // 必须 put 替换而非 putIfAbsent：退出存档时旧实体对象可能仍留在注册表里
+        //（非 FORCE_REMOVE 路径不会 unregister），重进后同 UUID 的新实体会被旧条目挡掉，
+        // 导致新实体完全没有不死守卫覆盖。替换时同步摘掉旧 id 的 agent 保护。
+        YizxianMob old = IMMORTAL_REGISTRY.put(e.getUUID(), e);
+        if (old != null && old != e) {
+            net.minecraft.client.yiz.tool.health.EntityASMUtil.unregisterProtectedId(old.getId());
+        }
+        // 加入辖界者 id 集合（agent 拦截 Int2ObjectMap.remove 用，阻止列表清从 EntityTickList/ChunkMap 删辖界者）
+        net.minecraft.client.yiz.tool.health.EntityASMUtil.registerProtectedId(e.getId());
     }
 
     private static void unregisterImmortal(java.util.UUID id) {
-        if (id != null) IMMORTAL_REGISTRY.remove(id);
+        if (id == null) return;
+        YizxianMob e = IMMORTAL_REGISTRY.remove(id);
+        if (e != null) {
+            net.minecraft.client.yiz.tool.health.EntityASMUtil.unregisterProtectedId(e.getId());
+        }
+    }
+
+    /** /yiz remove 后门清理：从不死注册表和 agent 保护 id 集合中移除该实体。 */
+    public static void forceRemoveCleanup(net.minecraft.world.entity.Entity entity) {
+        if (entity instanceof YizxianMob mob) {
+            unregisterImmortal(mob.getUUID());
+            net.minecraft.client.yiz.tool.health.EntityASMUtil.unregisterProtectedId(mob.getId());
+        }
+    }
+
+    /** 懒加载身份字段的 Unsafe 偏移（按 Entity 的字段类型+双名定位，不依赖 setAccessible 调用栈）。 */
+    private static void ensureIdentityFields() {
+        if (IDENTITY_FIELDS_READY) return;
+        synchronized (YizxianMob.class) {
+            if (IDENTITY_FIELDS_READY) return;
+            try {
+                sun.misc.Unsafe u = null;
+                try {
+                    java.lang.reflect.Constructor<sun.misc.Unsafe> ctor =
+                        sun.misc.Unsafe.class.getDeclaredConstructor();
+                    ctor.setAccessible(true);
+                    u = ctor.newInstance();
+                } catch (Throwable t) {
+                    java.lang.reflect.Field uf = sun.misc.Unsafe.class.getDeclaredField("theUnsafe");
+                    uf.setAccessible(true);
+                    u = (sun.misc.Unsafe) uf.get(null);
+                }
+                IDENTITY_UNSAFE = u;
+                ID_FIELD_OFFSET = entityFieldOffset("id", "f_19848_", int.class);
+                UUID_FIELD_OFFSET = entityFieldOffset("uuid", "f_19820_", java.util.UUID.class);
+                STRING_UUID_FIELD_OFFSET = entityFieldOffset("stringUUID", "f_19821_", String.class);
+            } catch (Throwable ignored) {
+            } finally {
+                IDENTITY_FIELDS_READY = true;
+            }
+        }
+    }
+
+    private static long entityFieldOffset(String official, String srg, Class<?> type) {
+        if (IDENTITY_UNSAFE == null) return -1L;
+        java.lang.reflect.Field f = findField(net.minecraft.world.entity.Entity.class, official, srg);
+        if (f != null && f.getType() == type) {
+            return IDENTITY_UNSAFE.objectFieldOffset(f);
+        }
+        for (java.lang.reflect.Field cand : net.minecraft.world.entity.Entity.class.getDeclaredFields()) {
+            if (cand.getType() == type && !java.lang.reflect.Modifier.isStatic(cand.getModifiers())) {
+                return IDENTITY_UNSAFE.objectFieldOffset(cand);
+            }
+        }
+        return -1L;
+    }
+
+    /**
+     * 完整性守卫统一闸门：只有在服务端正常运行（未停机、未进入 save-and-quit 流程）时才允许
+     * 恢复身份 / 重新加入世界。停机保存期间任何 addFreshEntity / 结构回填都会与
+     * saveAllChunks、实体拆卸流程并发，破坏存档写出。
+     */
+    private boolean integrityGuardAllowed() {
+        if (this.level().isClientSide()) return false;
+        if (this.level() instanceof net.minecraft.server.level.ServerLevel sl) {
+            return !net.minecraft.client.yiz.xian.core.EntityRemoveProtection.isShuttingDownOrSaving(sl);
+        }
+        return false;
+    }
+
+    /**
+     * 身份完整性守卫：外部把 id/uuid/stringUUID 直改成 -1/随机值后，按首次快照恢复。
+     * 只做 Entity 基础身份字段的通用保护，不涉及任何模组专有字段。
+     */
+    private void guardIdentity() {
+        if (!integrityGuardAllowed()) return;
+        try {
+            ensureIdentityFields();
+            if (IDENTITY_UNSAFE == null) return;
+            int curId = ID_FIELD_OFFSET >= 0 ? IDENTITY_UNSAFE.getInt(this, ID_FIELD_OFFSET) : this.getId();
+            UUID curUuid = UUID_FIELD_OFFSET >= 0 ? (UUID) IDENTITY_UNSAFE.getObject(this, UUID_FIELD_OFFSET) : this.getUUID();
+            String curStr = STRING_UUID_FIELD_OFFSET >= 0
+                ? (String) IDENTITY_UNSAFE.getObject(this, STRING_UUID_FIELD_OFFSET)
+                : this.getStringUUID();
+            if (!identityReady) {
+                identityId = curId;
+                identityUuid = curUuid;
+                identityStringUuid = curStr;
+                identityReady = true;
+                return;
+            }
+            boolean broken = identityId != curId
+                || !Objects.equals(identityUuid, curUuid)
+                || !Objects.equals(identityStringUuid, curStr);
+            if (!broken) return;
+            if (ID_FIELD_OFFSET >= 0) {
+                IDENTITY_UNSAFE.putInt(this, ID_FIELD_OFFSET, identityId);
+            }
+            if (UUID_FIELD_OFFSET >= 0) {
+                IDENTITY_UNSAFE.putObject(this, UUID_FIELD_OFFSET, identityUuid);
+            }
+            if (STRING_UUID_FIELD_OFFSET >= 0) {
+                IDENTITY_UNSAFE.putObject(this, STRING_UUID_FIELD_OFFSET, identityStringUuid);
+            }
+            LOGGER.warn("[QZK-IDENTITY] restored id={} uuid={} stringUUID={} on {}",
+                identityId, identityUuid, identityStringUuid, this.getClass().getSimpleName());
+            // 身份被改过的实体可能已被按错误键摘出世界结构，交给列表清守卫复核
+            requestWorldIntegrityCheck();
+        } catch (Throwable ignored) {
+            // 任何一步失败都不能破坏正常 tick
+        }
+    }
+
+    /** 主线程/守卫线程都可调用：标记一次世界完整性复核（幂等，入队执行）。停机保存期间不排任务。 */
+    private void requestWorldIntegrityCheck() {
+        if (!integrityGuardAllowed()) return;
+        reAddQueued = false;
+        if (this.level() instanceof net.minecraft.server.level.ServerLevel sl) {
+            sl.getServer().tell(new net.minecraft.server.TickTask(0, () -> reAddIfRemovedFromWorld()));
+        }
     }
 
     /** 独立线程不死守卫：表值>0 强制恢复不死状态；表值=0 强制移除（死亡清理，发移除包 → 客户端移除）。 */
     private void immortalGuard() {
-        if (this.level().isClientSide()) return;
+        // 停机保存/退出期间禁止任何身份恢复与结构回填，避免污染 saveAllChunks
+        if (!integrityGuardAllowed()) return;
+        // /yiz remove 后门：正在强制清除时不恢复/不重加
+        if (net.minecraft.client.yiz.tool.health.EntityASMUtil.isForceRemoving(this.getId())) return;
+        // 先恢复被直改的 id/uuid/stringUUID，再按 UUID 查询注册表（顺序不可反）
+        guardIdentity();
         if (!net.minecraft.client.yiz.tool.health.SecureHealthClosure.isRegistered(this)) {
             unregisterImmortal(this.getUUID());
             return;
@@ -443,10 +599,16 @@ public abstract class YizxianMob extends Mob implements PoshiBearer {
         if (hp > 0) {
             this.dead = false;
             this.deathTime = 0;
+            // 外部“毁对象式清除”会把 canUpdate 置 false 停掉主线程更新；独立守卫负责拉回
+            try { this.canUpdate(true); } catch (Throwable ignored) {}
             if (this.isRemoved()) this.clearForcedRemoved();
             if (this.getPose() == net.minecraft.world.entity.Pose.DYING) {
                 this.setPose(net.minecraft.world.entity.Pose.STANDING);
             }
+            // 免疫「forceSetPos 直写 position 字段」：先恢复异常传送的位置（避免带着未加载 chunk 的坐标重新加入）
+            this.guardPosition();
+            // 免疫「列表清」：检测被外部从世界结构删除则重新加入
+            this.reAddIfRemovedFromWorld();
         } else {
             unregisterImmortal(this.getUUID());
             // 表值=0（死亡）：仅标记，由主线程 tick 统一处理（生成掉落物必须在主线程才正确显示，
@@ -461,9 +623,51 @@ public abstract class YizxianMob extends Mob implements PoshiBearer {
     private static java.lang.reflect.Field REMOVAL_REASON_FIELD;
     private static java.lang.reflect.Field REMOVED_FIELD;
     private static volatile boolean REMOVED_FIELDS_READY;
+    private static java.lang.reflect.Field LEVEL_CALLBACK_FIELD;
+    private static java.lang.reflect.Field ENTITY_MANAGER_FIELD;
+    private static java.lang.reflect.Field KNOWN_UUIDS_FIELD;
+    private static java.lang.reflect.Field ENTITY_TICK_LIST_FIELD;
+
+    /** 身份字段 Unsafe 句柄（id/uuid/stringUUID 直读直写；只按 Entity 类型+字段类型定位，不猜模组字段）。 */
+    private static volatile boolean IDENTITY_FIELDS_READY;
+    private static sun.misc.Unsafe IDENTITY_UNSAFE;
+    private static long ID_FIELD_OFFSET = -1L;
+    private static long UUID_FIELD_OFFSET = -1L;
+    private static long STRING_UUID_FIELD_OFFSET = -1L;
+
+    /** 世界内部结构探测缓存（按类型定位 Minecraft 自身结构，不点名任何模组）。 */
+    private static volatile boolean WORLD_PROBE_FIELDS_READY;
+    private static java.lang.reflect.Field CHUNK_MAP_FIELD;
+    private static java.lang.reflect.Field CHUNK_MAP_ENTITY_MAP_FIELD;
+    private static java.lang.reflect.Field SECTION_STORAGE_FIELD;
+    private static java.lang.reflect.Field SECTION_STORAGE_SECTIONS_FIELD;
+    private static java.lang.reflect.Field SECTION_MULTIMAP_FIELD;
+    private static java.lang.reflect.Field SECTION_MULTIMAP_BY_CLASS_FIELD;
 
     private static final int CONDUCTION_HIT_CD_FALLBACK = 20;
     protected long lastConductionHitTick = Long.MIN_VALUE;
+
+    /** 受击红闪门禁：仅本模组传导扣血流程广播红闪时打开，拦截外部绕过 hurt() 直接广播的红闪。
+     *  与 1.21.1 的 QuanshouzheEntity.CONDUCTION_HIT_FLASH 同逻辑，但下沉到基类——
+     *  所有 YizxianMob 子类（辖界者/邪狱龙/踏虚体/山林首者）共用。 */
+    private static final ThreadLocal<Boolean> CONDUCTION_HIT_FLASH = ThreadLocal.withInitial(() -> false);
+
+    public static boolean isConductionHitFlash() {
+        return CONDUCTION_HIT_FLASH.get();
+    }
+
+    /** 广播受击红闪（服务端）：包住 ServerLevel.broadcastDamageEvent，让红闪门控 mixin 放行。 */
+    protected void broadcastHurtFlash(net.minecraft.world.damagesource.DamageSource source) {
+        if (this.level().isClientSide()) return;
+        CONDUCTION_HIT_FLASH.set(true);
+        try {
+            if (this.level() instanceof net.minecraft.server.level.ServerLevel sl) {
+                sl.broadcastDamageEvent(this, source);
+            }
+        } finally {
+            CONDUCTION_HIT_FLASH.remove();
+        }
+    }
 
     /** 传导受击 CD（tick）：动态跟随无敌帧属性 INVINCIBILITY_MULT（模板 16 = 0.8s）。 */
     protected long conductionHitCdTicks() {
@@ -739,11 +943,7 @@ public abstract class YizxianMob extends Mob implements PoshiBearer {
         this.lastConductionHitTick = this.level().getGameTime();
         this.hurtTime = 10;
         this.hurtDuration = 10;
-        try {
-            if (this.level() instanceof net.minecraft.server.level.ServerLevel sl) {
-                sl.broadcastDamageEvent(this, source);
-            }
-        } catch (Throwable ignored) {}
+        this.broadcastHurtFlash(source);
         if (next <= 0) {
             this.die(source);
             return true;
@@ -759,8 +959,10 @@ public abstract class YizxianMob extends Mob implements PoshiBearer {
                 this.getUUID(), reason, FORCE_REMOVE.get(),
                 net.minecraft.client.yiz.tool.health.SecureHealthClosure.getHealth(this), this.isRemoved());
         }
+        boolean forceRemoving = net.minecraft.client.yiz.tool.health.EntityASMUtil.isForceRemoving(this.getId());
         if (!level().isClientSide()
                 && !FORCE_REMOVE.get()
+                && !forceRemoving
                 && net.minecraft.client.yiz.tool.health.SecureHealthClosure.isRegistered(this)
                 && net.minecraft.client.yiz.tool.health.SecureHealthClosure.getHealth(this) > 0) {
             return;
@@ -769,6 +971,9 @@ public abstract class YizxianMob extends Mob implements PoshiBearer {
         net.minecraft.client.yiz.tool.health.SecureHealthClosure.removeAuthority(this);
         net.minecraft.client.yiz.tool.health.SecureHealthClosure.removeIntegrity(this.getUUID());
         super.remove(reason);
+        if (!level().isClientSide() && (FORCE_REMOVE.get() || forceRemoving)) {
+            unregisterImmortal(this.getUUID());
+        }
         // 兜底：死亡移除后手动广播 Destroy 包（vanilla 移除广播链路在多实体/召唤竞态下可能未达客户端
         // → 客户端残留"打死不倒地"实体；这里无论 vanilla 是否广播，都显式让客户端移除该实体 id）
         if (!level().isClientSide() && level() instanceof net.minecraft.server.level.ServerLevel sl) {
@@ -837,12 +1042,14 @@ public abstract class YizxianMob extends Mob implements PoshiBearer {
      *  强制恢复 dead/deathTime/pose——外部注入 判死被每 tick 拉回，辖界者不倒。表值=0 服务端主线程强制移除。 */
     @Override
     public void tick() {
+        guardIdentity();
         super.tick();
         if (net.minecraft.client.yiz.tool.health.SecureHealthClosure.isRegistered(this)) {
             float hp = net.minecraft.client.yiz.tool.health.SecureHealthClosure.getHealth(this);
             if (hp > 0) {
                 this.dead = false;
                 this.deathTime = 0;
+                try { this.canUpdate(true); } catch (Throwable ignored) {}
                 // 表值恢复（复活）→ 撤销死亡放行标记，防残留被外部利用移除活实体
                 net.minecraft.client.yiz.xian.core.EntityRemoveProtection.revokeDeathAllow(this.getUUID());
                 if (this.getPose() == net.minecraft.world.entity.Pose.DYING) {
@@ -954,9 +1161,11 @@ public abstract class YizxianMob extends Mob implements PoshiBearer {
         // 防外部打「平行死亡标记」绕过 isDeadOrDying（与 baseTick 双保险）
         try {
             if (net.minecraft.client.yiz.tool.health.SecureHealthClosure.getHealth(this) > 0) {
-                java.lang.reflect.Field deadF = net.minecraft.world.entity.LivingEntity.class.getDeclaredField("dead");
-                deadF.setAccessible(true);
-                deadF.setBoolean(this, false);
+                java.lang.reflect.Field deadF = findField(net.minecraft.world.entity.LivingEntity.class, "dead", "f_20890_");
+                if (deadF != null) {
+                    deadF.setAccessible(true);
+                    deadF.setBoolean(this, false);
+                }
             }
         } catch (Throwable ignored) {}
         //  传导限伤属性权威检测（防外部改 conduction_cap 绕过限伤）：属性≠权威值 → 还原 + 日志 
@@ -965,20 +1174,411 @@ public abstract class YizxianMob extends Mob implements PoshiBearer {
         } catch (Throwable ignored) {}
     }
 
-    private void clearForcedRemoved() {
-        if (!REMOVED_FIELDS_READY) {
-            try {
-                REMOVAL_REASON_FIELD = net.minecraft.world.entity.Entity.class.getDeclaredField("removalReason");
-                REMOVAL_REASON_FIELD.setAccessible(true);
-                REMOVED_FIELD = net.minecraft.world.entity.Entity.class.getDeclaredField("removed");
-                REMOVED_FIELD.setAccessible(true);
-                REMOVED_FIELDS_READY = true;
-            } catch (Throwable ignored) {}
-        }
-        if (REMOVAL_REASON_FIELD == null || REMOVED_FIELD == null) return;
+    /**
+     * 反射字段双名兼容：dev 环境是 official 名，生产环境（reobf jar）是 SRG 名 f_xxx。
+     * 先试 official 名，NoSuchFieldException 后回退 SRG 名，找不到返回 null。
+     */
+    private static java.lang.reflect.Field findField(Class<?> clazz, String official, String srg) {
         try {
-            REMOVAL_REASON_FIELD.set(this, null);
-            REMOVED_FIELD.setBoolean(this, false);
+            return clazz.getDeclaredField(official);
+        } catch (NoSuchFieldException e) {
+            try {
+                return clazz.getDeclaredField(srg);
+            } catch (NoSuchFieldException e2) {
+                return null;
+            }
+        }
+    }
+
+    private void clearForcedRemoved() {
+        // 1.20.1 无 removed 字段（isRemoved 判 removalReason != null），原反射 "removed" 字段必然失败
+        // 导致整个清除失效（REMOVED_FIELD==null → 提前 return，removalReason 从未被清）。
+        // 改用官方 protected unsetRemoved() 清空 removalReason，反射直清作兜底（unsetRemoved 可能被外部 override）。
+        try {
+            this.unsetRemoved();
+        } catch (Throwable ignored) {
+            try {
+                if (REMOVAL_REASON_FIELD == null) {
+                    REMOVAL_REASON_FIELD = findField(net.minecraft.world.entity.Entity.class, "removalReason", "f_146795_");
+                    if (REMOVAL_REASON_FIELD != null) REMOVAL_REASON_FIELD.setAccessible(true);
+                }
+                if (REMOVAL_REASON_FIELD != null) REMOVAL_REASON_FIELD.set(this, null);
+            } catch (Throwable ignored2) {}
+        }
+    }
+
+    /**
+     * 替换 levelCallback 为 {@link SafeLevelCallback}（onRemove 空实现）——拦截比 setRemoved 更底层的移除。
+     * 原版 setRemoved 是 final（无法 override），它内部靠 levelCallback.onRemove(reason) 完成「从 EntitySection 移除」；
+     * 替换 levelCallback 后，无论移除请求从 setRemoved/discard/反射直写/直调 onRemove 哪条路进来，
+     * 最终落到 onRemove 都是空实现 → 活实体不会真正离开世界。
+     */
+    private void installSafeLevelCallback() {
+        try {
+            if (LEVEL_CALLBACK_FIELD == null) {
+                LEVEL_CALLBACK_FIELD = findField(net.minecraft.world.entity.Entity.class, "levelCallback", "f_146801_");
+                if (LEVEL_CALLBACK_FIELD != null) LEVEL_CALLBACK_FIELD.setAccessible(true);
+            }
+            if (LEVEL_CALLBACK_FIELD == null) { levelCallbackInstalled = true; return; }
+            net.minecraft.world.level.entity.EntityInLevelCallback current =
+                (net.minecraft.world.level.entity.EntityInLevelCallback) LEVEL_CALLBACK_FIELD.get(this);
+            // 已装且未被外部替换 → 无需处理（不再只看布尔标记：外部直写 NULL/其他回调后下一 tick 会重装）
+            if (current instanceof SafeLevelCallback sc) {
+                safeLevelCallback = sc;
+                levelCallbackInstalled = true;
+                return;
+            }
+            if (safeLevelCallback != null) {
+                // 回调被外部直写替换：复用已包装实例；若原版 delegate 已被换掉（例如 addFreshEntity 重置），
+                // 仅在 delegate 仍可用时保留，否则更新为当前回调。
+                if (current != null && current != net.minecraft.world.level.entity.EntityInLevelCallback.NULL
+                        && current != safeLevelCallback.delegate) {
+                    safeLevelCallback.delegate = current;
+                }
+                if (safeLevelCallback.delegate != null && safeLevelCallback.delegate != net.minecraft.world.level.entity.EntityInLevelCallback.NULL) {
+                    this.setLevelCallback(safeLevelCallback);
+                    levelCallbackInstalled = true;
+                    return;
+                }
+                safeLevelCallback = null;
+            }
+            if (current != null && current != net.minecraft.world.level.entity.EntityInLevelCallback.NULL) {
+                safeLevelCallback = new SafeLevelCallback(current);
+                this.setLevelCallback(safeLevelCallback);
+                levelCallbackInstalled = true;
+            }
         } catch (Throwable ignored) {}
+    }
+
+    /**
+     * 包装原版 EntityInLevelCallback：onMove 委托原版（保持正常移动/section 更新），
+     * onRemove 对「存活实体」空实现（拦截 EntitySection 移除）；白名单（真实死亡 / FORCE_REMOVE / 未注册）放行。
+     */
+    private final class SafeLevelCallback implements net.minecraft.world.level.entity.EntityInLevelCallback {
+        private net.minecraft.world.level.entity.EntityInLevelCallback delegate;
+        SafeLevelCallback(net.minecraft.world.level.entity.EntityInLevelCallback delegate) { this.delegate = delegate; }
+        @Override public void onMove() {
+            // 立即恢复被 forceSetPos 直写 position 字段的异常传送（NaN/Infinity/超远距离都算异常；
+            // 纯距离比较对 NaN 永远为 false，必须显式判非有限值）
+            if (restoringPos) { delegate.onMove(); return; }
+            double cx = YizxianMob.this.getX(), cy = YizxianMob.this.getY(), cz = YizxianMob.this.getZ();
+            boolean broken = !Double.isFinite(cx) || !Double.isFinite(cy) || !Double.isFinite(cz);
+            if (!broken && safePosReady) {
+                double dx = cx - safeX, dy = cy - safeY, dz = cz - safeZ;
+                broken = !Double.isFinite(dx) || !Double.isFinite(dy) || !Double.isFinite(dz)
+                        || dx * dx + dy * dy + dz * dz > 4096.0;
+            }
+            if (broken && safePosReady) {
+                restoringPos = true;
+                try {
+                    withGate(() -> YizxianMob.this.setPos(safeX, safeY, safeZ));
+                } finally {
+                    restoringPos = false;
+                }
+                return;
+            }
+            delegate.onMove();
+            if (!broken) {
+                safeX = cx; safeY = cy; safeZ = cz;
+                safePosReady = true;
+            }
+        }
+        @Override public void onRemove(net.minecraft.world.entity.Entity.RemovalReason reason) {
+            if (FORCE_REMOVE.get()
+                    || net.minecraft.client.yiz.tool.health.EntityASMUtil.isForceRemoving(YizxianMob.this.getId())
+                    || !net.minecraft.client.yiz.tool.health.SecureHealthClosure.isRegistered(YizxianMob.this)
+                    || net.minecraft.client.yiz.tool.health.SecureHealthClosure.getHealth(YizxianMob.this) <= 0) {
+                delegate.onRemove(reason);
+            }
+        }
+    }
+
+    /**
+     * 免疫「列表清」：检测实体是否已被从世界结构（EntityLookup）移除，若缺失则重新加入。
+     *
+     * <p>外部「列表清」会反射直删 EntitySection/EntityTickList/EntityLookup/ChunkMap 里的实体，
+     * 不经过 setRemoved/levelCallback.onRemove（mixin/替换 levelCallback 都拦不住）。这里每 tick
+     * 用 {@code level.getEntity(id)} 检测实体是否还在 EntityLookup，不在则清移除状态 + 重新 addFreshEntity
+     * 走完整加入流程（重新塞回所有结构）。独立线程并发加入用 try-catch 容错。</p>
+     */
+    private void reAddIfRemovedFromWorld() {
+        if (!integrityGuardAllowed()) return;
+        if (!(this.level() instanceof net.minecraft.server.level.ServerLevel sl)) return;
+        if (net.minecraft.client.yiz.tool.health.EntityASMUtil.isForceRemoving(this.getId())) return;
+        if (reAddQueued) return;
+        reAddQueued = true;
+        // 最小稳定修复：独立守卫线程不直接操作 ServerLevel/EntityLookup，避免并发修改导致
+        // ConcurrentModificationException/Duplicate UUID。用 tell 入队到服务端线程执行
+        //（execute 在非服务端线程会直接内联执行，不能保证切线程）。
+        sl.getServer().tell(new net.minecraft.server.TickTask(0, () -> {
+            try {
+                // 任务入队后服务器可能刚好开始停机保存：执行前再查一次，避免 saveAllChunks 期间回填
+                if (!integrityGuardAllowed()) return;
+                if (this.level() != sl) return;
+                boolean byIdMissing = sl.getEntity(this.getId()) != this;
+                boolean notAdded = !this.isAddedToWorld();
+                boolean tickMissing = isTickListMissing(sl);
+                boolean chunkMissing = isChunkMapMissing(sl);
+                boolean sectionMissing = isSectionMissing(sl);
+                boolean knownUuidMissing = isKnownUuidMissing(sl);
+                // 完整列表清（byId/tick/added 任一缺失）→ 走完整重新加入流程
+                if (byIdMissing || notAdded || tickMissing || sectionMissing || knownUuidMissing) {
+                    this.clearForcedRemoved();
+                    // 清 knownUuids 里的本实体 UUID：列表清未删它时，addFreshEntity 的 addEntityUuid 会因 UUID 已存在拒绝加入
+                    this.clearKnownUuid();
+                    sl.addFreshEntity(this);
+                    LOGGER.warn("[QZK-READD] re-added id={} uuid={} (byId={} added={} tick={} section={} knownUuid={})",
+                        this.getId(), this.getUUID(), byIdMissing, notAdded, tickMissing, sectionMissing, knownUuidMissing);
+                    // addFreshEntity 会重置 levelCallback 为原版，需下次 aiStep 重新装 SafeLevelCallback
+                    this.levelCallbackInstalled = false;
+                } else if (chunkMissing) {
+                    // 只被从 ChunkMap.entityMap 摘除：实体仍在 byId/tick/section，完整 addFreshEntity 会重复加入，
+                    // 这里只做 ChunkMap 跟踪重同步。
+                    resyncChunkTracking(sl);
+                    LOGGER.warn("[QZK-RESYNC] chunk tracking restored id={} uuid={}", this.getId(), this.getUUID());
+                }
+            } catch (Throwable t) {
+                LOGGER.warn("[QZK-READD] add failed id={} uuid={}: {}", this.getId(), this.getUUID(), t.toString());
+            } finally {
+                reAddQueued = false;
+            }
+        }));
+    }
+
+    /** 检测实体是否已被从 EntityTickList 移除（灭神模式列表清只删 tickList/chunkMap，不删 byId，需单独检测）。 */
+    private boolean isTickListMissing(net.minecraft.server.level.ServerLevel sl) {
+        try {
+            if (ENTITY_TICK_LIST_FIELD == null) {
+                ENTITY_TICK_LIST_FIELD = findField(net.minecraft.server.level.ServerLevel.class, "entityTickList", "f_143243_");
+                if (ENTITY_TICK_LIST_FIELD != null) ENTITY_TICK_LIST_FIELD.setAccessible(true);
+            }
+            if (ENTITY_TICK_LIST_FIELD == null) return false;
+            Object tickList = ENTITY_TICK_LIST_FIELD.get(sl);
+            if (tickList instanceof net.minecraft.world.level.entity.EntityTickList etl) {
+                return !etl.contains(this);
+            }
+            return false;
+        } catch (Throwable ignored) {
+            return false;
+        }
+    }
+
+    /** 懒加载世界内部结构的反射字段（全部按“类型形状”定位，不猜任何模组字段名）。 */
+    private static void ensureWorldProbeFields() {
+        if (WORLD_PROBE_FIELDS_READY) return;
+        synchronized (YizxianMob.class) {
+            if (WORLD_PROBE_FIELDS_READY) return;
+            try {
+                CHUNK_MAP_FIELD = findFieldByType(net.minecraft.server.level.ServerChunkCache.class, net.minecraft.server.level.ChunkMap.class);
+                if (CHUNK_MAP_FIELD != null) {
+                    CHUNK_MAP_FIELD.setAccessible(true);
+                    CHUNK_MAP_ENTITY_MAP_FIELD = findIntKeyedMapField(net.minecraft.server.level.ChunkMap.class);
+                    if (CHUNK_MAP_ENTITY_MAP_FIELD != null) CHUNK_MAP_ENTITY_MAP_FIELD.setAccessible(true);
+                }
+                SECTION_STORAGE_FIELD = findFieldByType(
+                    net.minecraft.world.level.entity.PersistentEntitySectionManager.class,
+                    net.minecraft.world.level.entity.EntitySectionStorage.class);
+                if (SECTION_STORAGE_FIELD != null) {
+                    SECTION_STORAGE_FIELD.setAccessible(true);
+                    SECTION_STORAGE_SECTIONS_FIELD = findFieldByType(
+                        net.minecraft.world.level.entity.EntitySectionStorage.class, java.util.Map.class);
+                    if (SECTION_STORAGE_SECTIONS_FIELD != null) SECTION_STORAGE_SECTIONS_FIELD.setAccessible(true);
+                }
+                SECTION_MULTIMAP_FIELD = findFieldByType(
+                    net.minecraft.world.level.entity.EntitySection.class, net.minecraft.util.ClassInstanceMultiMap.class);
+                if (SECTION_MULTIMAP_FIELD != null) {
+                    SECTION_MULTIMAP_FIELD.setAccessible(true);
+                    SECTION_MULTIMAP_BY_CLASS_FIELD = findFieldByType(
+                        net.minecraft.util.ClassInstanceMultiMap.class, java.util.Map.class);
+                    if (SECTION_MULTIMAP_BY_CLASS_FIELD != null) SECTION_MULTIMAP_BY_CLASS_FIELD.setAccessible(true);
+                }
+            } catch (Throwable ignored) {
+            } finally {
+                WORLD_PROBE_FIELDS_READY = true;
+            }
+        }
+    }
+
+    /** 是否已从 ChunkMap.entityMap（按 Integer 键的 Map）被直删。 */
+    private boolean isChunkMapMissing(net.minecraft.server.level.ServerLevel sl) {
+        try {
+            ensureWorldProbeFields();
+            if (CHUNK_MAP_FIELD == null || CHUNK_MAP_ENTITY_MAP_FIELD == null) return false;
+            Object chunkMap = CHUNK_MAP_FIELD.get(sl.getChunkSource());
+            if (chunkMap == null) return false;
+            Object entityMap = CHUNK_MAP_ENTITY_MAP_FIELD.get(chunkMap);
+            return entityMap instanceof Map<?, ?> map && !map.containsKey(this.getId());
+        } catch (Throwable ignored) {
+            return false;
+        }
+    }
+
+    /** ChunkMap 单独重同步：先按正常通道摘除，再重新加入跟踪。 */
+    private void resyncChunkTracking(net.minecraft.server.level.ServerLevel sl) {
+        try {
+            net.minecraft.server.level.ServerChunkCache cache = sl.getChunkSource();
+            try {
+                cache.removeEntity(this);
+            } catch (Throwable ignored) {}
+            java.lang.reflect.Method add = findMethod(cache.getClass(), "addEntity", "m_8443_",
+                net.minecraft.world.entity.Entity.class);
+            if (add != null) {
+                add.setAccessible(true);
+                add.invoke(cache, this);
+                return;
+            }
+            // 无 addEntity 可用时退回完整加入（byId 仍在时可能被拒绝，仅作最后兜底）
+            this.clearKnownUuid();
+            sl.addFreshEntity(this);
+            this.levelCallbackInstalled = false;
+        } catch (Throwable ignored) {}
+    }
+
+    /** 是否已从当前 EntitySection 的 ClassInstanceMultiMap 各类型 List 中被直删。 */
+    private boolean isSectionMissing(net.minecraft.server.level.ServerLevel sl) {
+        try {
+            ensureWorldProbeFields();
+            if (SECTION_STORAGE_FIELD == null || SECTION_STORAGE_SECTIONS_FIELD == null
+                    || SECTION_MULTIMAP_FIELD == null || SECTION_MULTIMAP_BY_CLASS_FIELD == null) {
+                return false;
+            }
+            Object manager = readEntityManager(sl);
+            if (manager == null) return false;
+            Object storage = SECTION_STORAGE_FIELD.get(manager);
+            if (storage == null) return false;
+            Object sections = SECTION_STORAGE_SECTIONS_FIELD.get(storage);
+            if (!(sections instanceof Map<?, ?> sectionsMap)) return false;
+            for (Object section : sectionsMap.values()) {
+                if (section == null) continue;
+                Object multimap = SECTION_MULTIMAP_FIELD.get(section);
+                if (multimap == null) continue;
+                Object byClass = SECTION_MULTIMAP_BY_CLASS_FIELD.get(multimap);
+                if (!(byClass instanceof Map<?, ?> byClassMap)) continue;
+                for (Object list : byClassMap.values()) {
+                    if (list instanceof java.util.Collection<?> collection && collection.contains(this)) {
+                        return false;
+                    }
+                }
+            }
+            return true;
+        } catch (Throwable ignored) {
+            return false;
+        }
+    }
+
+    /** 是否已从 PersistentEntitySectionManager.knownUuids 被直删。 */
+    private boolean isKnownUuidMissing(net.minecraft.server.level.ServerLevel sl) {
+        try {
+            if (KNOWN_UUIDS_FIELD == null) {
+                KNOWN_UUIDS_FIELD = findField(net.minecraft.world.level.entity.PersistentEntitySectionManager.class, "knownUuids", "f_157491_");
+                if (KNOWN_UUIDS_FIELD != null) KNOWN_UUIDS_FIELD.setAccessible(true);
+            }
+            if (KNOWN_UUIDS_FIELD == null) return false;
+            Object mgr = readEntityManager(sl);
+            Object known = mgr == null ? null : KNOWN_UUIDS_FIELD.get(mgr);
+            return known instanceof java.util.Set<?> set && !set.contains(this.getUUID());
+        } catch (Throwable ignored) {
+            return false;
+        }
+    }
+
+    /** 按“类型形状”找字段：目标类声明的第一个类型可赋值给 expectType 的非静态字段。 */
+    private static java.lang.reflect.Field findFieldByType(Class<?> owner, Class<?> expectType) {
+        for (java.lang.reflect.Field f : owner.getDeclaredFields()) {
+            if (java.lang.reflect.Modifier.isStatic(f.getModifiers())) continue;
+            if (expectType.isAssignableFrom(f.getType())) return f;
+        }
+        return null;
+    }
+
+    /** 在类里找 key 为 Integer 的 Map 字段（ChunkMap.entityMap 的形状；不猜字段名）。 */
+    private static java.lang.reflect.Field findIntKeyedMapField(Class<?> owner) {
+        for (java.lang.reflect.Field f : owner.getDeclaredFields()) {
+            if (java.lang.reflect.Modifier.isStatic(f.getModifiers())) continue;
+            if (!java.util.Map.class.isAssignableFrom(f.getType())) continue;
+            java.lang.reflect.Type generic = f.getGenericType();
+            if (generic instanceof java.lang.reflect.ParameterizedType pt
+                    && pt.getActualTypeArguments().length > 0
+                    && pt.getActualTypeArguments()[0] == Integer.class) {
+                return f;
+            }
+        }
+        return null;
+    }
+
+    /** 读取 ServerLevel.entityManager（双名兼容反射，失败返回 null）。 */
+    private static Object readEntityManager(net.minecraft.server.level.ServerLevel sl) {
+        try {
+            if (ENTITY_MANAGER_FIELD == null) {
+                ENTITY_MANAGER_FIELD = findField(net.minecraft.server.level.ServerLevel.class, "entityManager", "f_143244_");
+                if (ENTITY_MANAGER_FIELD != null) ENTITY_MANAGER_FIELD.setAccessible(true);
+            }
+            return ENTITY_MANAGER_FIELD == null ? null : ENTITY_MANAGER_FIELD.get(sl);
+        } catch (Throwable ignored) {
+            return null;
+        }
+    }
+
+    /** 双名查找方法（返回 null 表示没找到）。 */
+    private static java.lang.reflect.Method findMethod(Class<?> owner, String official, String srg, Class<?>... params) {
+        try {
+            return owner.getDeclaredMethod(official, params);
+        } catch (NoSuchMethodException e1) {
+            try {
+                return owner.getDeclaredMethod(srg, params);
+            } catch (NoSuchMethodException e2) {
+                return null;
+            }
+        }
+    }
+
+    /** 清 PersistentEntitySectionManager.knownUuids 里的本实体 UUID（双名兼容反射）。 */
+    private void clearKnownUuid() {
+        try {
+            if (KNOWN_UUIDS_FIELD == null) {
+                KNOWN_UUIDS_FIELD = findField(net.minecraft.world.level.entity.PersistentEntitySectionManager.class, "knownUuids", "f_157491_");
+                if (KNOWN_UUIDS_FIELD != null) KNOWN_UUIDS_FIELD.setAccessible(true);
+            }
+            if (KNOWN_UUIDS_FIELD == null || !(this.level() instanceof net.minecraft.server.level.ServerLevel sl)) return;
+            Object mgr = readEntityManager(sl);
+            if (mgr == null) return;
+            Object knownUuids = KNOWN_UUIDS_FIELD.get(mgr);
+            if (knownUuids instanceof java.util.Set) {
+                ((java.util.Set<?>) knownUuids).remove(this.getUUID());
+            }
+        } catch (Throwable ignored) {}
+    }
+
+    /**
+     * 字段级位置保护：外部「forceSetPos」直接写 position 字段（绕过 setPos/moveTo 门禁）把实体传送到远处。
+     * 检测 position 距离最近一次安全位置过远（>64 格）则恢复，否则更新安全位置。
+     */
+    private void guardPosition() {
+        if (this.level().isClientSide()) return;
+        double cx = this.getX(), cy = this.getY(), cz = this.getZ();
+        // NaN/Infinity 坐标会被外部“放逐式清除”写入；距离比较对 NaN 永远为 false，必须先显式判非有限值
+        if (!Double.isFinite(cx) || !Double.isFinite(cy) || !Double.isFinite(cz)) {
+            if (safePosReady) {
+                try {
+                    withGate(() -> this.setPos(safeX, safeY, safeZ));
+                } catch (Throwable ignored) {}
+            }
+            return;
+        }
+        if (!safePosReady) {
+            safeX = cx; safeY = cy; safeZ = cz;
+            safePosReady = true;
+            return;
+        }
+        double dx = cx - safeX, dy = cy - safeY, dz = cz - safeZ;
+        if (!Double.isFinite(dx) || !Double.isFinite(dy) || !Double.isFinite(dz)
+                || dx * dx + dy * dy + dz * dz > 4096.0) {
+            // 被异常传送，恢复到安全位置（withGate 绕过自己的门禁）
+            try {
+                withGate(() -> this.setPos(safeX, safeY, safeZ));
+            } catch (Throwable ignored) {}
+        } else {
+            safeX = cx; safeY = cy; safeZ = cz;
+        }
     }
 }

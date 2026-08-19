@@ -100,12 +100,7 @@ public class QuanshouzheEntity extends YizxianMob {
     private long lastPlayerHurtTime = -1000;
 
     // lastConductionHitTick / conductionHitCdTicks 继承自基类 YizxianMob（传导受击 CD 动态跟随 INVINCIBILITY_MULT）
-
-    private static final ThreadLocal<Boolean> CONDUCTION_HIT_FLASH = ThreadLocal.withInitial(() -> false);
-
-    public static boolean isConductionHitFlash() {
-        return CONDUCTION_HIT_FLASH.get();
-    }
+    // CONDUCTION_HIT_FLASH / isConductionHitFlash / broadcastHurtFlash 已下沉到基类 YizxianMob
 
     //  测试阶段硬编码防御（不依赖属性，防属性被外部清空导致防御失效）
     // 400 血 / 单发限伤 1 点 / 传导 CD 40 tick。正式版恢复属性驱动（conduction_cap 12%、invincibility_mult）。
@@ -844,15 +839,9 @@ public class QuanshouzheEntity extends YizxianMob {
 
         this.hurtTime = 10;
         this.hurtDuration = 10;
-        CONDUCTION_HIT_FLASH.set(true);
-        try {
-            // 1.20.1 差异：Level.broadcastDamageEvent 是空实现，必须调 ServerLevel 版本才发红闪包
-            if (this.level() instanceof net.minecraft.server.level.ServerLevel sl) {
-                sl.broadcastDamageEvent(this, source);
-            }
-        } finally {
-            CONDUCTION_HIT_FLASH.remove();
-        }
+        // 1.20.1 差异：Level.broadcastDamageEvent 是空实现，必须调 ServerLevel 版本才发红闪包。
+        // 基类 broadcastHurtFlash 已包好红闪门禁（mixin 只放行本模组传导扣血红闪）。
+        this.broadcastHurtFlash(source);
 
         net.minecraft.client.yiz.handler.AttackInvulnerabilityTracker.onHurtSuccess(this, this.level().getGameTime());
 
