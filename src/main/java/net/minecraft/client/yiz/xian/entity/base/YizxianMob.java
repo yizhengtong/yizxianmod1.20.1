@@ -89,11 +89,14 @@ public abstract class YizxianMob extends Mob implements PoshiBearer {
     private double lastMirrorArmor = Double.NaN;
     private double lastMirrorSpellDefense = Double.NaN;
 
-    /** 实体身份快照：id/uuid/stringUUID 被外部直改后按原值恢复（通用防“毁对象式”清除，不针对任何模组）。 */
-    private int identityId = Integer.MIN_VALUE;
-    private UUID identityUuid;
-    private String identityStringUuid;
-    private boolean identityReady;
+    /**
+     * 实体身份快照：id/uuid/stringUUID 被外部直改后按原值恢复（通用防“毁对象式”清除，不针对任何模组）。
+     * 守卫线程写、主线程在身份读取兜底里读，必须 volatile 保证可见性。
+     */
+    private volatile int identityId = Integer.MIN_VALUE;
+    private volatile UUID identityUuid;
+    private volatile String identityStringUuid;
+    private volatile boolean identityReady;
 
     /** SafeLevelCallback 实例引用：外部把 levelCallback 直写为 NULL/其他回调后据此重装。 */
     private SafeLevelCallback safeLevelCallback;
@@ -546,6 +549,9 @@ public abstract class YizxianMob extends Mob implements PoshiBearer {
                 ? (String) IDENTITY_UNSAFE.getObject(this, STRING_UUID_FIELD_OFFSET)
                 : this.getStringUUID();
             if (!identityReady) {
+                // 快照必须是有效身份：读到空值说明字段已被清空或尚未就绪，
+                // 此时记下来会把「空身份」当成正确身份，之后永远恢复不回来。
+                if (curUuid == null || curStr == null) return;
                 identityId = curId;
                 identityUuid = curUuid;
                 identityStringUuid = curStr;
@@ -558,6 +564,12 @@ public abstract class YizxianMob extends Mob implements PoshiBearer {
             if (!broken) return;
             if (ID_FIELD_OFFSET >= 0) {
                 IDENTITY_UNSAFE.putInt(this, ID_FIELD_OFFSET, identityId);
+                if (curId != identityId) {
+                    // 受保护 id 集合按 id 索引：id 被改期间集合里仍是旧值，恢复后必须同步，
+                    // 否则所有按 id 的判定都对不上，底层保护整体失效。
+                    net.minecraft.client.yiz.tool.health.EntityASMUtil.unregisterProtectedId(curId);
+                    net.minecraft.client.yiz.tool.health.EntityASMUtil.registerProtectedId(identityId);
+                }
             }
             if (UUID_FIELD_OFFSET >= 0) {
                 IDENTITY_UNSAFE.putObject(this, UUID_FIELD_OFFSET, identityUuid);
@@ -601,6 +613,8 @@ public abstract class YizxianMob extends Mob implements PoshiBearer {
             this.deathTime = 0;
             // 外部“毁对象式清除”会把 canUpdate 置 false 停掉主线程更新；独立守卫负责拉回
             try { this.canUpdate(true); } catch (Throwable ignored) {}
+            // 能力容器被外部作废后不会自行恢复，挂在其上的数据会一并失效；复活是幂等操作
+            try { this.reviveCaps(); } catch (Throwable ignored) {}
             if (this.isRemoved()) this.clearForcedRemoved();
             if (this.getPose() == net.minecraft.world.entity.Pose.DYING) {
                 this.setPose(net.minecraft.world.entity.Pose.STANDING);
@@ -796,6 +810,49 @@ public abstract class YizxianMob extends Mob implements PoshiBearer {
         } finally {
             SELF_CORRECTING.remove();
         }
+    }
+
+    /**
+     * 身份读取的空值兜底 —— 身份字段被外部清空时，调用方仍能拿到稳定身份。
+     *
+     * <p>实体身份是一切按 UUID 索引的表（血量权威表、注册表、跟踪表）的键。字段被置空后，
+     * 每一处查表都会直接抛空指针，服务端 tick 当场崩溃 —— 这是比「移除实体」更廉价的打法：
+     * 不用绕过任何保护，只要让保护自己炸掉。</p>
+     *
+     * <p>这里只保证读到的身份稳定；字段本身的写回交给身份守卫统一处理，避免高频路径上写字段。</p>
+     */
+    @Override
+    public java.util.UUID getUUID() {
+        java.util.UUID current = super.getUUID();
+        if (current != null) return current;
+        java.util.UUID snapshot = this.identityUuid;
+        return snapshot != null ? snapshot : current;
+    }
+
+    @Override
+    public String getStringUUID() {
+        String current = super.getStringUUID();
+        if (current != null) return current;
+        String snapshot = this.identityStringUuid;
+        if (snapshot != null) return snapshot;
+        java.util.UUID uuidSnapshot = this.identityUuid;
+        return uuidSnapshot != null ? uuidSnapshot.toString() : current;
+    }
+
+    /**
+     * 不参与自然清除。
+     *
+     * <p>「持久化标记」是可以被外部改写的普通状态：置 false 后原版自己就会在玩家走远时清掉实体，
+     * 移除请求由原版发出、看起来完全合法。这里从判定源头返回固定值，使该标记被改写也不生效。</p>
+     */
+    @Override
+    public boolean removeWhenFarAway(double distanceToClosestPlayer) {
+        return false;
+    }
+
+    @Override
+    public boolean isPersistenceRequired() {
+        return true;
     }
 
     /** 持久化混淆血量串 + key（防 reload 时 key 变 → 垃圾值）。 */
@@ -1321,21 +1378,20 @@ public abstract class YizxianMob extends Mob implements PoshiBearer {
                 boolean chunkMissing = isChunkMapMissing(sl);
                 boolean sectionMissing = isSectionMissing(sl);
                 boolean knownUuidMissing = isKnownUuidMissing(sl);
-                // 完整列表清（byId/tick/added 任一缺失）→ 走完整重新加入流程
-                if (byIdMissing || notAdded || tickMissing || sectionMissing || knownUuidMissing) {
+                if (byIdMissing || notAdded || tickMissing || sectionMissing || knownUuidMissing || chunkMissing) {
                     this.clearForcedRemoved();
-                    // 清 knownUuids 里的本实体 UUID：列表清未删它时，addFreshEntity 的 addEntityUuid 会因 UUID 已存在拒绝加入
-                    this.clearKnownUuid();
-                    sl.addFreshEntity(this);
-                    LOGGER.warn("[QZK-READD] re-added id={} uuid={} (byId={} added={} tick={} section={} knownUuid={})",
-                        this.getId(), this.getUUID(), byIdMissing, notAdded, tickMissing, sectionMissing, knownUuidMissing);
-                    // addFreshEntity 会重置 levelCallback 为原版，需下次 aiStep 重新装 SafeLevelCallback
+                    // 按缺失项逐个回填，不经过任何新增入口：外部对加入路径的封锁影响不到这里
+                    boolean repaired = net.minecraft.client.yiz.xian.core.WorldPresenceGuard.repair(sl, this);
+                    if (!repaired) {
+                        // 结构定位不可用时退回官方加入流程（UUID 已在登记表时会被拒绝，先清）
+                        this.clearKnownUuid();
+                        sl.addFreshEntity(this);
+                    }
+                    LOGGER.warn("[QZK-READD] restored id={} uuid={} direct={} (byId={} added={} tick={} section={} knownUuid={} chunk={})",
+                        this.getId(), this.getUUID(), repaired,
+                        byIdMissing, notAdded, tickMissing, sectionMissing, knownUuidMissing, chunkMissing);
+                    // 回填会重建原版 levelCallback，需下次 aiStep 重新装 SafeLevelCallback
                     this.levelCallbackInstalled = false;
-                } else if (chunkMissing) {
-                    // 只被从 ChunkMap.entityMap 摘除：实体仍在 byId/tick/section，完整 addFreshEntity 会重复加入，
-                    // 这里只做 ChunkMap 跟踪重同步。
-                    resyncChunkTracking(sl);
-                    LOGGER.warn("[QZK-RESYNC] chunk tracking restored id={} uuid={}", this.getId(), this.getUUID());
                 }
             } catch (Throwable t) {
                 LOGGER.warn("[QZK-READD] add failed id={} uuid={}: {}", this.getId(), this.getUUID(), t.toString());

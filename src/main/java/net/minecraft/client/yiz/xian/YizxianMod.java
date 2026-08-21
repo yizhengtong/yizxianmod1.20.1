@@ -144,6 +144,9 @@ public class YizxianMod {
         // 堆叠核心：铁砧强化最大堆叠数（AnvilUpdateEvent / AnvilRepairEvent）
         net.minecraftforge.common.MinecraftForge.EVENT_BUS.register(
             net.minecraft.client.yiz.xian.item.StackCoreAnvilHandler.class);
+        // 加入事件反否决：本模组实体的加入不接受外部取消
+        net.minecraftforge.common.MinecraftForge.EVENT_BUS.register(
+            net.minecraft.client.yiz.xian.core.EntityPresenceEventGuard.class);
     }
 
     private void commonSetup(final FMLCommonSetupEvent event) {
@@ -152,6 +155,8 @@ public class YizxianMod {
         net.minecraft.client.yiz.xian.network.NetworkHandler.register();
         // /yiz sx zddk <数值>：给主手物品添加涨跌多空属性修饰符（SimpleCommandRegistry 已由前置库订阅）
         net.minecraft.client.yiz.xian.command.YizSxCommand.register();
+        // /yiz sx mzdk <数值>：给主手物品添加灭在多空属性修饰符（1点=目标最大生命1%）
+        net.minecraft.client.yiz.xian.command.YizSxMzdkCommand.register();
         // /yiz dh xjz skill <index>：让周围 5 格内辖界者播放技能动画（气丹）
         net.minecraft.client.yiz.xian.command.YizDhCommand.register();
         // /yiz gj xjz skill <index> <count>：让周围 5 格内辖界者接下来 count 次攻击都用 index 技能

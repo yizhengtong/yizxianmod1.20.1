@@ -339,7 +339,7 @@ public class QuanshouzheEntity extends YizxianMob {
         net.minecraft.client.yiz.tool.health.VitalitySeveranceHandler.addStackingBan(target, 5.0f, 7 * 20L);
         target.invulnerableTime = 0;
         net.minecraft.client.yiz.tool.health.EntityASMUtil.applyDreamDamage(this, target,
-            (float) this.getAttributeValue(net.minecraft.client.yiz.attribute.YizAttributes.FIRST_DREAM.get()));
+            this.getAttributeValue(net.minecraft.client.yiz.attribute.YizAttributes.FIRST_DREAM.get()));
         float targetHpDream = switch (this.getFormPhase()) {
             case 2 -> target.getMaxHealth() * 0.05f;
             default -> 0f;

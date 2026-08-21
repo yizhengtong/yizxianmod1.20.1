@@ -39,8 +39,10 @@ public class C2SDreamAttackPayload {
             if (!(entity instanceof LivingEntity target)) return;
             if (player.distanceToSqr(target) > 64.0 * 64.0) return;
             var inst = player.getAttribute(YizAttributes.FIRST_DREAM.get());
-            if (inst == null || inst.getValue() <= 0) return;
-            EntityASMUtil.applyDreamDamage(player, target, (float) inst.getValue());
+            if (inst != null && inst.getValue() > 0) {
+                EntityASMUtil.applyDreamDamage(player, target, inst.getValue());
+            }
+            EntityASMUtil.applyPercentDreamDamage(player, target);
         });
         ctx.setPacketHandled(true);
     }

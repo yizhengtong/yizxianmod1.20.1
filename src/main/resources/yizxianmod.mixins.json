@@ -8,11 +8,18 @@
     "EntityRemoveProtectionMixin",
     "ServerLevelAddProtectionMixin",
     "ServerLevelDamageFlashProtectionMixin",
-    "ServerChunkCacheRemoveProtectionMixin"
+    "ServerChunkCacheRemoveProtectionMixin",
+    "ChunkMapRemoveProtectionMixin",
+    "EntityTickListRemoveProtectionMixin",
+    "EntityLookupRemoveProtectionMixin",
+    "EntitySectionRemoveProtectionMixin",
+    "PersistentEntitySectionManagerAddGuardMixin"
   ],
   "client": [
     "ChatComponentHistoryMixin",
-    "PlayerAttackMixin"
+    "PlayerAttackMixin",
+    "ClientLevelEntityAddGuardMixin",
+    "EntityRenderVisibilityGuardMixin"
   ],
   "injectors": {
     "defaultRequire": 1

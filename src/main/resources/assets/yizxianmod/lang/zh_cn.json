@@ -93,6 +93,8 @@
   "item.yizxianmod.taxuti_spawn_egg": "踏虚体刷怪蛋",
   "entity.yizxianmod.shanlinshouzhe": "山林首者",
   "item.yizxianmod.shanlinshouzhe_spawn_egg": "山林首者刷怪蛋",
+  "attribute.yizmodqzk.long_short": "涨跌多空",
+  "attribute.yizmodqzk.dream_percent": "灭在多空",
   "item.yizxianmod.entity_attribute_editor": "实体属性编辑工具",
   "itemGroup.yizxianmod": "辖界者"
 }

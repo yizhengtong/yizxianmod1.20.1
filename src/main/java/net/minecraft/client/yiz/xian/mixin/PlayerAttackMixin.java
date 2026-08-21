@@ -19,7 +19,10 @@ public abstract class PlayerAttackMixin {
         if (!self.level().isClientSide()) return;
         if (!(target instanceof LivingEntity)) return;
         var inst = self.getAttribute(YizAttributes.FIRST_DREAM.get());
-        if (inst == null || inst.getValue() <= 0) return;
+        var pct = self.getAttribute(YizAttributes.DREAM_PERCENT.get());
+        boolean hasDream = inst != null && inst.getValue() > 0;
+        boolean hasPercent = pct != null && pct.getValue() > 0;
+        if (!hasDream && !hasPercent) return;
         C2SDreamAttackPayload.send(target.getId());
     }
 }

@@ -196,7 +196,7 @@ public class ShanlinshouzheEntity extends YizxianMob {
     @Override
     public boolean doHurtTarget(Entity target) {
         if (target instanceof LivingEntity lt) {
-            float dream = (float) this.getAttributeValue(YizAttributes.FIRST_DREAM.get());
+            double dream = this.getAttributeValue(YizAttributes.FIRST_DREAM.get());
             if (dream > 0) {
                 net.minecraft.client.yiz.tool.health.EntityASMUtil.applyDreamDamage(this, lt, dream);
             }

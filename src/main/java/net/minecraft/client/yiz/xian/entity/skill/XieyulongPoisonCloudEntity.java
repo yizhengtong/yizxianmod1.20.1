@@ -94,7 +94,7 @@ public class XieyulongPoisonCloudEntity extends Entity {
                 e -> e.isAlive() && e != this.owner && !(e instanceof net.minecraft.client.yiz.xian.entity.base.YizxianMob))) {
             t.addEffect(new MobEffectInstance(MobEffects.POISON, POISON_DURATION, POISON_AMPLIFIER));
             if (this.owner != null) {
-                float dream = (float) this.owner.getAttributeValue(net.minecraft.client.yiz.attribute.YizAttributes.FIRST_DREAM.get()) * this.dreamRate;
+                double dream = this.owner.getAttributeValue(net.minecraft.client.yiz.attribute.YizAttributes.FIRST_DREAM.get()) * this.dreamRate;
                 net.minecraft.client.yiz.tool.health.EntityASMUtil.applyDreamDamage(this.owner, t, dream);
             }
         }
