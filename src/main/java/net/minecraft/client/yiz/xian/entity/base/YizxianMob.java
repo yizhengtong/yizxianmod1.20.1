@@ -461,6 +461,15 @@ public abstract class YizxianMob extends Mob implements PoshiBearer {
         YizxianMob old = IMMORTAL_REGISTRY.put(e.getUUID(), e);
         if (old != null && old != e) {
             net.minecraft.client.yiz.tool.health.EntityASMUtil.unregisterProtectedId(old.getId());
+            // 同 UUID 已有旧对象：彻底清旧对象出世界（深层反注册 + 广播移除包），
+            // 否则同 UUID 多对象会互相拉回 → 对象翻倍（2→4→8）。
+            // forceRemoveDeep 按 UUID 清 knownUuids/byUuid 会暂时误删新对象 e 的条目，
+            // 但 e 的 immortalGuard 下一 tick 会拉回自愈，可接受。
+            try {
+                if (old.level() instanceof net.minecraft.server.level.ServerLevel sl && !old.isRemoved()) {
+                    net.minecraft.client.yiz.tool.EntityRemovalUtil.forceRemoveDeep(sl, old);
+                }
+            } catch (Throwable ignored) {}
         }
         // 加入辖界者 id 集合（agent 拦截 Int2ObjectMap.remove 用，阻止列表清从 EntityTickList/ChunkMap 删辖界者）
         net.minecraft.client.yiz.tool.health.EntityASMUtil.registerProtectedId(e.getId());
@@ -1414,12 +1423,6 @@ public abstract class YizxianMob extends Mob implements PoshiBearer {
                 boolean sectionMissing = isSectionMissing(sl);
                 boolean knownUuidMissing = isKnownUuidMissing(sl);
                 if (byIdMissing || notAdded || tickMissing || sectionMissing || knownUuidMissing || chunkMissing) {
-                    // 先彻底清旧实体数据（所有结构的旧条目 + 发移除包给客户端），再回填：
-                    // 否则外部模组移除后残留的旧 ID 条目会在客户端 EntityLookup 里累积重复
-                    // （同 UUID 多份血条/实例）。forceRemoveDeep 深层反注册 + 广播移除包，幂等。
-                    try {
-                        net.minecraft.client.yiz.tool.EntityRemovalUtil.forceRemoveDeep(sl, this);
-                    } catch (Throwable ignored) {}
                     this.clearForcedRemoved();
                     // 按缺失项逐个回填，不经过任何新增入口：外部对加入路径的封锁影响不到这里
                     boolean repaired = net.minecraft.client.yiz.xian.core.WorldPresenceGuard.repair(sl, this);
