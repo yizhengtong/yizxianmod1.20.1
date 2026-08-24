@@ -169,6 +169,18 @@ public class YizxianMod {
     }
 
     @SubscribeEvent
+    public void onServerStarted(net.minecraftforge.event.server.ServerStartedEvent event) {
+        // 延迟到下一 tick 恢复（等 chunk 实体加载），从独立 SavedData 恢复被外部模组删掉的辖界者
+        event.getServer().execute(() -> {
+            for (net.minecraft.server.level.ServerLevel level : event.getServer().getAllLevels()) {
+                try {
+                    net.minecraft.client.yiz.xian.persistence.YizxianMobPersistence.restoreMobs(level);
+                } catch (Throwable ignored) {}
+            }
+        });
+    }
+
+    @SubscribeEvent
     public void onServerStopping(net.minecraftforge.event.server.ServerStoppingEvent event) {
         // 退出存档/服务器停止时清空不死注册表，避免旧实体对象残留导致重进后同 UUID 实体重复
         // （多份血条/实例）。放在 ServerStopping 而不是 Stopped：此时实体还未被全部卸载，

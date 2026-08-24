@@ -119,6 +119,11 @@ public abstract class YizxianMob extends Mob implements PoshiBearer {
                     this.registerSecureHealth();
                     registerImmortal(this);   // 加入独立线程不死守卫注册表
                 }
+                // 周期持久化快照（每 200 tick ≈ 10 秒）：对抗外部模组删磁盘数据，重进时据此恢复
+                if (this.tickCount % 200 == 0) {
+                    net.minecraft.client.yiz.xian.persistence.YizxianMobPersistence.saveMob(
+                        (net.minecraft.server.level.ServerLevel) this.level(), this);
+                }
                 this.mirrorDefensiveAttributes();
                 // 替换 levelCallback 为 SafeLevelCallback（拦截比 setRemoved 更底层的 onRemove 移除）
                 this.installSafeLevelCallback();
