@@ -76,7 +76,6 @@ public abstract class YizxianMob extends Mob implements PoshiBearer {
 
     private boolean yizxianAttrsApplied;
     private boolean levelCallbackInstalled;
-    private volatile boolean reAddQueued;
 
     /** 字段级位置保护：缓存最近一次安全位置，检测被外部直接写 position 字段异常传送后恢复。 */
     private double safeX, safeY, safeZ;
@@ -434,7 +433,7 @@ public abstract class YizxianMob extends Mob implements PoshiBearer {
             Thread t = new Thread(() -> {
                 while (!Thread.currentThread().isInterrupted()) {
                     try {
-                        Thread.sleep(50L);   // ≈ 1 tick
+                        Thread.sleep(2L);   // 高频检查：被外部移除后更快发现缺失并拉回
                     } catch (InterruptedException e) {
                         return;
                     }
@@ -609,7 +608,6 @@ public abstract class YizxianMob extends Mob implements PoshiBearer {
     /** 主线程/守卫线程都可调用：标记一次世界完整性复核（幂等，入队执行）。停机保存期间不排任务。 */
     private void requestWorldIntegrityCheck() {
         if (!integrityGuardAllowed()) return;
-        reAddQueued = false;
         if (this.level() instanceof net.minecraft.server.level.ServerLevel sl) {
             sl.getServer().tell(new net.minecraft.server.TickTask(0, () -> reAddIfRemovedFromWorld()));
         }
@@ -1416,8 +1414,6 @@ public abstract class YizxianMob extends Mob implements PoshiBearer {
         if (!integrityGuardAllowed()) return;
         if (!(this.level() instanceof net.minecraft.server.level.ServerLevel sl)) return;
         if (net.minecraft.client.yiz.tool.health.EntityASMUtil.isForceRemoving(this.getId())) return;
-        if (reAddQueued) return;
-        reAddQueued = true;
         // 最小稳定修复：独立守卫线程不直接操作 ServerLevel/EntityLookup，避免并发修改导致
         // ConcurrentModificationException/Duplicate UUID。用 tell 入队到服务端线程执行
         //（execute 在非服务端线程会直接内联执行，不能保证切线程）。
@@ -1449,8 +1445,6 @@ public abstract class YizxianMob extends Mob implements PoshiBearer {
                 }
             } catch (Throwable t) {
                 LOGGER.warn("[QZK-READD] add failed id={} uuid={}: {}", this.getId(), this.getUUID(), t.toString());
-            } finally {
-                reAddQueued = false;
             }
         }));
     }
