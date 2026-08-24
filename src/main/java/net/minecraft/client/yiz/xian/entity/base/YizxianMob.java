@@ -643,10 +643,10 @@ public abstract class YizxianMob extends Mob implements PoshiBearer {
             }
             // 免疫「forceSetPos 直写 position 字段」：先恢复异常传送的位置（避免带着未加载 chunk 的坐标重新加入）
             this.guardPosition();
-            // 免疫「因果剥离/列表清」：byId 已被外部彻底摘除 → 从快照重新 spawn，完整还原（含
-            // EntityPersistentStorage，否则退出存档不保存、重进被真实移除）。
+            // 免疫「因果剥离」：EntityPersistentStorage 已被外部摘除 → 从快照重新 spawn，完整还原
+            // （否则退出存档不保存、重进被真实移除）。
             if (this.level() instanceof net.minecraft.server.level.ServerLevel sl
-                    && sl.getEntity(this.getId()) != this) {
+                    && isPersistentStorageMissing(sl)) {
                 java.util.UUID uuid = this.getUUID();
                 sl.getServer().tell(new net.minecraft.server.TickTask(0, () -> {
                     net.minecraft.client.yiz.xian.persistence.YizxianMobPersistence.respawnMob(sl, uuid);
@@ -672,6 +672,9 @@ public abstract class YizxianMob extends Mob implements PoshiBearer {
     private static java.lang.reflect.Field LEVEL_CALLBACK_FIELD;
     private static java.lang.reflect.Field ENTITY_MANAGER_FIELD;
     private static java.lang.reflect.Field KNOWN_UUIDS_FIELD;
+    private static java.lang.reflect.Field PERSISTENT_STORAGE_FIELD;
+    private static java.lang.reflect.Field PERSISTENT_STORAGE_MAP_FIELD;
+    private static volatile boolean PERSISTENT_STORAGE_READY;
     private static java.lang.reflect.Field ENTITY_TICK_LIST_FIELD;
 
     /** 身份字段 Unsafe 句柄（id/uuid/stringUUID 直读直写；只按 Entity 类型+字段类型定位，不猜模组字段）。 */
@@ -1665,6 +1668,43 @@ public abstract class YizxianMob extends Mob implements PoshiBearer {
                 ((java.util.Set<?>) knownUuids).remove(this.getUUID());
             }
         } catch (Throwable ignored) {}
+    }
+
+    /** 是否已从 EntityPersistentStorage（持久化存储）被直删——buer 因果剥离删这里会导致退出存档不保存。 */
+    private boolean isPersistentStorageMissing(net.minecraft.server.level.ServerLevel sl) {
+        try {
+            if (!PERSISTENT_STORAGE_READY) {
+                Object mgr0 = readEntityManager(sl);
+                if (mgr0 == null) return false;
+                for (java.lang.reflect.Field f : mgr0.getClass().getDeclaredFields()) {
+                    if ("net.minecraft.world.level.entity.EntityPersistentStorage".equals(f.getType().getName())) {
+                        try { f.setAccessible(true); } catch (Throwable ignored) {}
+                        PERSISTENT_STORAGE_FIELD = f;
+                        Object s0 = f.get(mgr0);
+                        if (s0 != null) {
+                            for (java.lang.reflect.Field pf : s0.getClass().getDeclaredFields()) {
+                                if (java.util.Map.class.isAssignableFrom(pf.getType())) {
+                                    try { pf.setAccessible(true); } catch (Throwable ignored) {}
+                                    PERSISTENT_STORAGE_MAP_FIELD = pf;
+                                    break;
+                                }
+                            }
+                        }
+                        break;
+                    }
+                }
+                PERSISTENT_STORAGE_READY = true;
+            }
+            if (PERSISTENT_STORAGE_FIELD == null || PERSISTENT_STORAGE_MAP_FIELD == null) return false;
+            Object mgr = readEntityManager(sl);
+            if (mgr == null) return false;
+            Object storage = PERSISTENT_STORAGE_FIELD.get(mgr);
+            if (storage == null) return false;
+            Object map = PERSISTENT_STORAGE_MAP_FIELD.get(storage);
+            return map instanceof java.util.Map<?, ?> m && !m.containsKey(this.getUUID());
+        } catch (Throwable ignored) {
+            return false;
+        }
     }
 
     /**
