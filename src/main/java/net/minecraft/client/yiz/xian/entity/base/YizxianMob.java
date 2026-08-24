@@ -119,11 +119,10 @@ public abstract class YizxianMob extends Mob implements PoshiBearer {
                     this.registerSecureHealth();
                     registerImmortal(this);   // 加入独立线程不死守卫注册表
                 }
-                // 周期持久化快照（每 200 tick ≈ 10 秒）：对抗外部模组删磁盘数据，重进时据此恢复
-                if (this.tickCount % 200 == 0) {
-                    net.minecraft.client.yiz.xian.persistence.YizxianMobPersistence.saveMob(
-                        (net.minecraft.server.level.ServerLevel) this.level(), this);
-                }
+                // 每次 aiStep 更新快照（内存 Map + setDirty 标记，autosave 周期写盘）：
+                // 被外部模组「因果剥离」彻底移除后，respawnMob 据此精确还原（位置/血量最新）。
+                net.minecraft.client.yiz.xian.persistence.YizxianMobPersistence.saveMob(
+                    (net.minecraft.server.level.ServerLevel) this.level(), this);
                 this.mirrorDefensiveAttributes();
                 // 替换 levelCallback 为 SafeLevelCallback（拦截比 setRemoved 更底层的 onRemove 移除）
                 this.installSafeLevelCallback();
@@ -644,6 +643,16 @@ public abstract class YizxianMob extends Mob implements PoshiBearer {
             }
             // 免疫「forceSetPos 直写 position 字段」：先恢复异常传送的位置（避免带着未加载 chunk 的坐标重新加入）
             this.guardPosition();
+            // 免疫「因果剥离/列表清」：byId 已被外部彻底摘除 → 从快照重新 spawn，完整还原（含
+            // EntityPersistentStorage，否则退出存档不保存、重进被真实移除）。
+            if (this.level() instanceof net.minecraft.server.level.ServerLevel sl
+                    && sl.getEntity(this.getId()) != this) {
+                java.util.UUID uuid = this.getUUID();
+                sl.getServer().tell(new net.minecraft.server.TickTask(0, () -> {
+                    net.minecraft.client.yiz.xian.persistence.YizxianMobPersistence.respawnMob(sl, uuid);
+                }));
+                return;
+            }
             // 免疫「列表清」：检测被外部从世界结构删除则重新加入
             this.reAddIfRemovedFromWorld();
         } else {

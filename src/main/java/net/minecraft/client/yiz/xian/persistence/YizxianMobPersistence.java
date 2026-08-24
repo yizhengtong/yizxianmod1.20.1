@@ -99,30 +99,40 @@ public class YizxianMobPersistence extends SavedData {
     public static void restoreMobs(ServerLevel level) {
         if (level == null || level.isClientSide()) return;
         YizxianMobPersistence p = get(level);
-        for (Map.Entry<UUID, MobSnapshot> e : p.mobs.entrySet()) {
-            UUID uuid = e.getKey();
-            if (level.getEntity(uuid) != null) continue;  // 已存在，跳过
-            MobSnapshot s = e.getValue();
-            EntityType<?> type = BuiltInRegistries.ENTITY_TYPE.get(new ResourceLocation(s.entityTypeKey()));
-            if (type == null) continue;
-            Entity entity;
-            try {
-                entity = type.create(level);
-            } catch (Throwable ignored) {
-                continue;
-            }
-            if (!(entity instanceof YizxianMob mob)) continue;
-            try {
-                mob.setUUID(uuid);
-                mob.setPos(s.x(), s.y(), s.z());
-                mob.setYRot(s.yRot());
-                mob.setXRot(s.xRot());
-                // 精确恢复逻辑血量：写权威表 + 混淆串（哨兵未初始化时也能写，非治疗方向也能写）
-                SecureHealthClosure.setHealth(mob, s.health());
-            } catch (Throwable ignored) {}
-            try {
-                level.addFreshEntity(mob);
-            } catch (Throwable ignored) {}
+        for (UUID uuid : new java.util.ArrayList<>(p.mobs.keySet())) {
+            respawnMob(level, uuid);
+        }
+    }
+
+    /** 从快照重新 spawn 单个辖界者（被彻底删除后立即还原 / 重进恢复共用）。返回是否成功。 */
+    public static boolean respawnMob(ServerLevel level, UUID uuid) {
+        if (level == null || level.isClientSide() || uuid == null) return false;
+        YizxianMobPersistence p = get(level);
+        MobSnapshot s = p.mobs.get(uuid);
+        if (s == null) return false;
+        if (level.getEntity(uuid) != null) return false;  // 已存在（没被删），跳过
+        EntityType<?> type = BuiltInRegistries.ENTITY_TYPE.get(new ResourceLocation(s.entityTypeKey()));
+        if (type == null) return false;
+        Entity entity;
+        try {
+            entity = type.create(level);
+        } catch (Throwable ignored) {
+            return false;
+        }
+        if (!(entity instanceof YizxianMob mob)) return false;
+        try {
+            mob.setUUID(uuid);
+            mob.setPos(s.x(), s.y(), s.z());
+            mob.setYRot(s.yRot());
+            mob.setXRot(s.xRot());
+            // 精确恢复逻辑血量：写权威表 + 混淆串（哨兵未初始化时也能写，非治疗方向也能写）
+            SecureHealthClosure.setHealth(mob, s.health());
+        } catch (Throwable ignored) {}
+        try {
+            level.addFreshEntity(mob);
+            return true;
+        } catch (Throwable ignored) {
+            return false;
         }
     }
 }
