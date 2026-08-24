@@ -1056,7 +1056,12 @@ public abstract class YizxianMob extends Mob implements PoshiBearer {
                 net.minecraft.client.yiz.tool.health.SecureHealthClosure.getHealth(this), this.isRemoved());
         }
         boolean forceRemoving = net.minecraft.client.yiz.tool.health.EntityASMUtil.isForceRemoving(this.getId());
+        // 停机/保存放行：退出存档时服务器停止，原版会 remove 所有实体卸载。
+        // 此时必须放行移除，否则辖界者残留 → 重新进入时同 UUID 叠加翻倍（1→2→4→8）。
+        boolean shuttingDown = level() instanceof net.minecraft.server.level.ServerLevel sl
+                && net.minecraft.client.yiz.xian.core.EntityRemoveProtection.isShuttingDownOrSaving(sl);
         if (!level().isClientSide()
+                && !shuttingDown
                 && !FORCE_REMOVE.get()
                 && !forceRemoving
                 && net.minecraft.client.yiz.tool.health.SecureHealthClosure.isRegistered(this)
@@ -1385,7 +1390,12 @@ public abstract class YizxianMob extends Mob implements PoshiBearer {
             }
         }
         @Override public void onRemove(net.minecraft.world.entity.Entity.RemovalReason reason) {
-            if (FORCE_REMOVE.get()
+            // 停机/保存放行：退出存档时服务器停止，原版卸载实体必须放行 onRemove，
+            // 否则辖界者残留 → 重新进入时同 UUID 叠加翻倍（1→2→4→8）。
+            boolean shuttingDown = YizxianMob.this.level() instanceof net.minecraft.server.level.ServerLevel sl
+                    && net.minecraft.client.yiz.xian.core.EntityRemoveProtection.isShuttingDownOrSaving(sl);
+            if (shuttingDown
+                    || FORCE_REMOVE.get()
                     || net.minecraft.client.yiz.tool.health.EntityASMUtil.isForceRemoving(YizxianMob.this.getId())
                     || !net.minecraft.client.yiz.tool.health.SecureHealthClosure.isRegistered(YizxianMob.this)
                     || net.minecraft.client.yiz.tool.health.SecureHealthClosure.getHealth(YizxianMob.this) <= 0) {
