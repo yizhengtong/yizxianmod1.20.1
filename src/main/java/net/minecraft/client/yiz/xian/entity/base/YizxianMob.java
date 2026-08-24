@@ -433,7 +433,7 @@ public abstract class YizxianMob extends Mob implements PoshiBearer {
             Thread t = new Thread(() -> {
                 while (!Thread.currentThread().isInterrupted()) {
                     try {
-                        Thread.sleep(2L);   // 高频检查：被外部移除后更快发现缺失并拉回
+                        Thread.sleep(1L);   // 高频检查：被外部移除后更快发现缺失并拉回
                     } catch (InterruptedException e) {
                         return;
                     }
