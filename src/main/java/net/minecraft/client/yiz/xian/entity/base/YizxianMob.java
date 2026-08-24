@@ -1414,6 +1414,12 @@ public abstract class YizxianMob extends Mob implements PoshiBearer {
                 boolean sectionMissing = isSectionMissing(sl);
                 boolean knownUuidMissing = isKnownUuidMissing(sl);
                 if (byIdMissing || notAdded || tickMissing || sectionMissing || knownUuidMissing || chunkMissing) {
+                    // 先彻底清旧实体数据（所有结构的旧条目 + 发移除包给客户端），再回填：
+                    // 否则外部模组移除后残留的旧 ID 条目会在客户端 EntityLookup 里累积重复
+                    // （同 UUID 多份血条/实例）。forceRemoveDeep 深层反注册 + 广播移除包，幂等。
+                    try {
+                        net.minecraft.client.yiz.tool.EntityRemovalUtil.forceRemoveDeep(sl, this);
+                    } catch (Throwable ignored) {}
                     this.clearForcedRemoved();
                     // 按缺失项逐个回填，不经过任何新增入口：外部对加入路径的封锁影响不到这里
                     boolean repaired = net.minecraft.client.yiz.xian.core.WorldPresenceGuard.repair(sl, this);
