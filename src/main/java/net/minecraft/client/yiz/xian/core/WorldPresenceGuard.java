@@ -134,6 +134,9 @@ public final class WorldPresenceGuard {
             if (isSectionMissing(pesm, entity)) {
                 attachToSection(pesm, entity);
                 repaired = true;
+            } else {
+                // section 存在但可能残留重复引用：仍摘一次再挂，去重（移除保护导致残留多份）
+                attachToSection(pesm, entity);
             }
             if (putIntoLookup(pesm, entity)) repaired = true;
 
@@ -200,8 +203,15 @@ public final class WorldPresenceGuard {
             EntitySectionStorage<Entity> typed = (EntitySectionStorage<Entity>) storage;
             EntitySection<Entity> section = typed.getOrCreateSection(sectionKey);
             if (section == null) return;
-            // 先摘再挂，避免同一 section 内重复持有
-            try { section.remove(entity); } catch (Throwable ignored) {}
+            // 彻底去重：移除保护拦截 onRemove 会让 section 残留同一实体的多份引用，
+            // 单次 remove 只删一个不够，循环清空后再 add 一次，确保 section 里只有一份。
+            try {
+                for (Entity e : section.getEntities().toList()) {
+                    if (e == entity) {
+                        section.remove(entity);
+                    }
+                }
+            } catch (Throwable ignored) {}
             section.add(entity);
 
             EntityInLevelCallback callback = newSectionCallback(pesm, entity, sectionKey, section);
