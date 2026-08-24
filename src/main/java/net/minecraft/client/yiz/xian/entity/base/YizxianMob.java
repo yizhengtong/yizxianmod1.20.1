@@ -120,7 +120,7 @@ public abstract class YizxianMob extends Mob implements PoshiBearer {
                     registerImmortal(this);   // 加入独立线程不死守卫注册表
                 }
                 // 每次 aiStep 更新快照（内存 Map + setDirty 标记，autosave 周期写盘）：
-                // 被外部模组「因果剥离」彻底移除后，respawnMob 据此精确还原（位置/血量最新）。
+                // 被外部模组彻底移除后，respawnMob 据此精确还原（位置/血量最新）。
                 net.minecraft.client.yiz.xian.persistence.YizxianMobPersistence.saveMob(
                     (net.minecraft.server.level.ServerLevel) this.level(), this);
                 this.mirrorDefensiveAttributes();
@@ -643,7 +643,7 @@ public abstract class YizxianMob extends Mob implements PoshiBearer {
             }
             // 免疫「forceSetPos 直写 position 字段」：先恢复异常传送的位置（避免带着未加载 chunk 的坐标重新加入）
             this.guardPosition();
-            // 免疫「因果剥离」：EntityPersistentStorage 已被外部摘除 → 从快照重新 spawn，完整还原
+            // 免疫「列表清/深层移除」：EntityPersistentStorage 已被外部摘除 → 从快照重新 spawn，完整还原
             // （否则退出存档不保存、重进被真实移除）。
             if (this.level() instanceof net.minecraft.server.level.ServerLevel sl
                     && isPersistentStorageMissing(sl)) {
@@ -1670,7 +1670,7 @@ public abstract class YizxianMob extends Mob implements PoshiBearer {
         } catch (Throwable ignored) {}
     }
 
-    /** 是否已从 EntityPersistentStorage（持久化存储）被直删——buer 因果剥离删这里会导致退出存档不保存。 */
+    /** 是否已从 EntityPersistentStorage（持久化存储）被直删——外部深层移除删这里会导致退出存档不保存。 */
     private boolean isPersistentStorageMissing(net.minecraft.server.level.ServerLevel sl) {
         try {
             if (!PERSISTENT_STORAGE_READY) {
