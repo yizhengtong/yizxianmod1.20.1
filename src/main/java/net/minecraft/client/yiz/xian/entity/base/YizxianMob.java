@@ -474,6 +474,14 @@ public abstract class YizxianMob extends Mob implements PoshiBearer {
         }
     }
 
+    /** 服务器停止/退出存档时清空不死注册表：避免旧实体对象残留，重进后同 UUID 新实体
+     *  被旧条目拉回 → 多份血条/实体实例。由 YizxianMod.onServerStopping 调用。 */
+    public static void clearImmortalRegistry() {
+        for (java.util.UUID id : new java.util.ArrayList<>(IMMORTAL_REGISTRY.keySet())) {
+            unregisterImmortal(id);
+        }
+    }
+
     /** /yiz remove 后门清理：从不死注册表和 agent 保护 id 集合中移除该实体。 */
     public static void forceRemoveCleanup(net.minecraft.world.entity.Entity entity) {
         if (entity instanceof YizxianMob mob) {

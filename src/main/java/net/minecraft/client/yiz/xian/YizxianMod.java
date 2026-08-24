@@ -167,4 +167,12 @@ public class YizxianMod {
     public void onServerStarting(ServerStartingEvent event) {
         LOGGER.debug("Yiz Xian Mod 服务端启动");
     }
+
+    @SubscribeEvent
+    public void onServerStopping(net.minecraftforge.event.server.ServerStoppingEvent event) {
+        // 退出存档/服务器停止时清空不死注册表，避免旧实体对象残留导致重进后同 UUID 实体重复
+        // （多份血条/实例）。放在 ServerStopping 而不是 Stopped：此时实体还未被全部卸载，
+        // 清空注册表即可让守护线程停止对残留旧对象的拉回。
+        net.minecraft.client.yiz.xian.entity.base.YizxianMob.clearImmortalRegistry();
+    }
 }
