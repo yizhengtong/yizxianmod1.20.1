@@ -169,6 +169,9 @@ public abstract class YizxianMob extends Mob implements PoshiBearer {
             double oldMax = this.getAttributeValue(net.minecraft.world.entity.ai.attributes.Attributes.MAX_HEALTH);
             float ratio = oldMax > 0 ? net.minecraft.client.yiz.tool.health.SecureHealthClosure.getHealth(this) / (float) oldMax : 1.0F;
             hp.setBaseValue(this.templateMaxHealth * mult);
+            // 注册 MAX_HEALTH 到属性标准化守护（20 tick 审计兜底还原）——vanilla 属性不走 setAttr，此前是审计盲区
+            net.minecraft.client.yiz.tool.attribute.AttributeStandardizer.registerStandard(this,
+                net.minecraft.world.entity.ai.attributes.Attributes.MAX_HEALTH, "max_health", 0);
             if (oldMax != this.getAttributeValue(net.minecraft.world.entity.ai.attributes.Attributes.MAX_HEALTH) && ratio > 0) {
                 this.setHealth((float) (this.getAttributeValue(net.minecraft.world.entity.ai.attributes.Attributes.MAX_HEALTH) * ratio));
             }
@@ -735,15 +738,15 @@ public abstract class YizxianMob extends Mob implements PoshiBearer {
     protected void registerSecureHealth() {
         if (level().isClientSide()) return;
         try {
-            int key = this.entityData.get(net.minecraft.client.yiz.tool.health.HealthChannels.SECURE_OBF_KEY);
-            String enc = this.entityData.get(net.minecraft.client.yiz.tool.health.HealthChannels.SECURE_OBF);
+            int key = this.entityData.get(net.minecraft.client.yiz.tool.health.HealthChannels.getSecureObfKey());
+            String enc = this.entityData.get(net.minecraft.client.yiz.tool.health.HealthChannels.getSecureObf());
             float v = net.minecraft.client.yiz.tool.health.FloatObf.dec(enc, key);
             float maxHp = secureMaxHealth();
             // 未初始化（哨兵 -1）或损坏/超上限 → 用受保护 maxHp 初始化
             if (Float.isNaN(v) || v < 0 || v > maxHp) {
                 net.minecraft.client.yiz.tool.health.SecureHealthClosure.beginObfWrite();
                 try {
-                    this.entityData.set(net.minecraft.client.yiz.tool.health.HealthChannels.SECURE_OBF,
+                    this.entityData.set(net.minecraft.client.yiz.tool.health.HealthChannels.getSecureObf(),
                         net.minecraft.client.yiz.tool.health.FloatObf.enc(maxHp, key));
                 } finally {
                     net.minecraft.client.yiz.tool.health.SecureHealthClosure.endObfWrite();
@@ -759,11 +762,11 @@ public abstract class YizxianMob extends Mob implements PoshiBearer {
     @Override
     protected void defineSynchedData() {
         super.defineSynchedData();
-        if (!this.entityData.hasItem(net.minecraft.client.yiz.tool.health.HealthChannels.SECURE_OBF)) {
+        if (!this.entityData.hasItem(net.minecraft.client.yiz.tool.health.HealthChannels.getSecureObf())) {
             int key = new java.security.SecureRandom().nextInt();
-            this.entityData.define(net.minecraft.client.yiz.tool.health.HealthChannels.SECURE_OBF,
+            this.entityData.define(net.minecraft.client.yiz.tool.health.HealthChannels.getSecureObf(),
                 net.minecraft.client.yiz.tool.health.FloatObf.enc(-1.0F, key));
-            this.entityData.define(net.minecraft.client.yiz.tool.health.HealthChannels.SECURE_OBF_KEY, key);
+            this.entityData.define(net.minecraft.client.yiz.tool.health.HealthChannels.getSecureObfKey(), key);
         }
     }
 
@@ -777,7 +780,7 @@ public abstract class YizxianMob extends Mob implements PoshiBearer {
         super.onSyncedDataUpdated(key);
         if (this.level().isClientSide()) return;
         if (!net.minecraft.client.yiz.tool.health.SecureHealthClosure.hasObf(this)) return;
-        if (key.getId() != net.minecraft.client.yiz.tool.health.HealthChannels.SECURE_OBF.getId()) return;
+        if (key.getId() != net.minecraft.client.yiz.tool.health.HealthChannels.getSecureObf().getId()) return;
         correctObfHealthString();
     }
 
@@ -786,9 +789,9 @@ public abstract class YizxianMob extends Mob implements PoshiBearer {
     private void correctObfHealthString() {
         if (SELF_CORRECTING.get()) return;
         boolean invalid;
-        int k = this.entityData.get(net.minecraft.client.yiz.tool.health.HealthChannels.SECURE_OBF_KEY);
+        int k = this.entityData.get(net.minecraft.client.yiz.tool.health.HealthChannels.getSecureObfKey());
         try {
-            String enc = this.entityData.get(net.minecraft.client.yiz.tool.health.HealthChannels.SECURE_OBF);
+            String enc = this.entityData.get(net.minecraft.client.yiz.tool.health.HealthChannels.getSecureObf());
             float v = net.minecraft.client.yiz.tool.health.FloatObf.dec(enc, k);
             //  用属性读 maxHp（this.getMaxHealth() 虚拟调用可被外部 agent 注入压负 → 误判串非法反复回写）
             float maxHp = net.minecraft.client.yiz.tool.health.SecureHealthClosure.getMaxHealth(this);
@@ -801,7 +804,7 @@ public abstract class YizxianMob extends Mob implements PoshiBearer {
         try {
             net.minecraft.client.yiz.tool.health.SecureHealthClosure.beginObfWrite();
             try {
-                this.entityData.set(net.minecraft.client.yiz.tool.health.HealthChannels.SECURE_OBF,
+                this.entityData.set(net.minecraft.client.yiz.tool.health.HealthChannels.getSecureObf(),
                     net.minecraft.client.yiz.tool.health.FloatObf.enc(
                         net.minecraft.client.yiz.tool.health.SecureHealthClosure.getHealth(this), k));
             } finally {
@@ -860,25 +863,44 @@ public abstract class YizxianMob extends Mob implements PoshiBearer {
     public void addAdditionalSaveData(net.minecraft.nbt.CompoundTag tag) {
         super.addAdditionalSaveData(tag);
         try {
-            tag.putString("yizxian_obf_health", this.entityData.get(net.minecraft.client.yiz.tool.health.HealthChannels.SECURE_OBF));
-            tag.putInt("yizxian_obf_key", this.entityData.get(net.minecraft.client.yiz.tool.health.HealthChannels.SECURE_OBF_KEY));
+            tag.putString("yizxian_obf_health", this.entityData.get(net.minecraft.client.yiz.tool.health.HealthChannels.getSecureObf()));
+            tag.putInt("yizxian_obf_key", this.entityData.get(net.minecraft.client.yiz.tool.health.HealthChannels.getSecureObfKey()));
         } catch (Throwable ignored) {}
     }
 
     /** 恢复混淆血量串 + key。 */
     @Override
     public void readAdditionalSaveData(net.minecraft.nbt.CompoundTag tag) {
+        // 鉴权必须在 super 之前：vanilla 的 readAdditionalSaveData 会读 NBT 的 Health 字段直接调
+        // setHealth（恢复血量），外部 mod 借道这里即可绕过传导限伤一次扣血。只在 vanilla 实体
+        // 加载流程（Entity.load → readAdditionalSaveData）调用时才放行整个 super 链。
+        if (!isVanillaEntityLoadCaller()) return;
         super.readAdditionalSaveData(tag);
         try {
             if (tag.contains("yizxian_obf_key", net.minecraft.nbt.Tag.TAG_INT)) {
                 int key = tag.getInt("yizxian_obf_key");
-                this.entityData.set(net.minecraft.client.yiz.tool.health.HealthChannels.SECURE_OBF_KEY, key);
+                this.entityData.set(net.minecraft.client.yiz.tool.health.HealthChannels.getSecureObfKey(), key);
                 if (tag.contains("yizxian_obf_health", net.minecraft.nbt.Tag.TAG_STRING)) {
-                    this.entityData.set(net.minecraft.client.yiz.tool.health.HealthChannels.SECURE_OBF,
+                    this.entityData.set(net.minecraft.client.yiz.tool.health.HealthChannels.getSecureObf(),
                         tag.getString("yizxian_obf_health"));
                 }
             }
         } catch (Throwable ignored) {}
+    }
+
+    /** 调用栈是否含 vanilla Entity.load（读存档必经帧）——用于拒绝外部 mod 直接调 readAdditionalSaveData 篡改血量。 */
+    protected static boolean isVanillaEntityLoadCaller() {
+        try {
+            return java.lang.StackWalker.getInstance(java.lang.StackWalker.Option.RETAIN_CLASS_REFERENCE)
+                .walk(frames -> frames.anyMatch(f -> {
+                    String cls = f.getDeclaringClass().getName();
+                    String m = f.getMethodName();
+                    return "net.minecraft.world.entity.Entity".equals(cls)
+                        && ("load".equals(m) || "m_20258_".equals(m));
+                }));
+        } catch (Throwable t) {
+            return true;  // 鉴权异常时保守放行，避免正常读存档失效
+        }
     }
 
     @Override
@@ -1037,7 +1059,9 @@ public abstract class YizxianMob extends Mob implements PoshiBearer {
             try {
                 net.minecraft.network.protocol.game.ClientboundRemoveEntitiesPacket pkt =
                     new net.minecraft.network.protocol.game.ClientboundRemoveEntitiesPacket(this.getId());
-                for (net.minecraft.server.level.ServerPlayer p : sl.players()) {
+                // 用 getPlayerList().getPlayers() 覆盖所有在线玩家（含死亡/重生切换中的玩家）：
+                // sl.players() 在玩家死亡重生窗口可能不含该玩家 → 移除包丢失 → 客户端残留实体模型。
+                for (net.minecraft.server.level.ServerPlayer p : sl.getServer().getPlayerList().getPlayers()) {
                     p.connection.send(pkt);
                 }
             } catch (Throwable ignored) {}
@@ -1196,9 +1220,12 @@ public abstract class YizxianMob extends Mob implements PoshiBearer {
         } catch (Throwable ignored) {}
         try {
             var hpInst = this.getAttribute(net.minecraft.world.entity.ai.attributes.Attributes.MAX_HEALTH);
-            float protectedMax = net.minecraft.client.yiz.tool.health.SecureHealthClosure.getMaxHealth(this);
-            if (hpInst != null && hpInst.getValue() != protectedMax && protectedMax > 0) {
-                hpInst.setBaseValue(protectedMax);
+            //  独立权威上限 = 模板值 × 难度乘数。不能读属性自身当保护值（SecureHealthClosure.getMaxHealth
+            // 读的就是该属性 → 比较自己跟自己恒 false，空转）；用 templateMaxHealth 才是「未被篡改」的基准。
+            double authoritativeMax = this.templateMaxHealth * difficultyMultiplier();
+            if (hpInst != null && authoritativeMax > 0
+                    && Math.abs(hpInst.getValue() - authoritativeMax) > 0.001) {
+                hpInst.setBaseValue(authoritativeMax);
                 hpInst.removeModifiers();
             }
         } catch (Throwable ignored) {}
