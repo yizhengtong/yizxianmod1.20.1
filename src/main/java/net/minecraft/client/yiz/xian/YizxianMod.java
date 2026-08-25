@@ -45,11 +45,6 @@ public class YizxianMod {
         ITEMS.register("taxuti_spawn_egg", () ->
             new net.minecraft.client.yiz.xian.item.TaxutiSpawnEggItem(new Item.Properties()));
 
-    /** 山林首者生物蛋（GeckoLib 动画，铁傀儡属性）。 */
-    public static final RegistryObject<Item> SHANLINSHOUZHE_SPAWN_EGG =
-        ITEMS.register("shanlinshouzhe_spawn_egg", () ->
-            new net.minecraft.client.yiz.xian.item.ShanlinshouzheSpawnEggItem(new Item.Properties()));
-
     // ── 辅助物品 ──────────────────────────────────────────────
 
     /** 光明末影之眼：手持时给周围末地传送门框画穿墙发光轮廓。 */
@@ -78,7 +73,6 @@ public class YizxianMod {
                     output.accept(QUANSHOUZHE_SPAWN_EGG.get());
                     output.accept(XIEYULONG_SPAWN_EGG.get());
                     output.accept(TAXUTI_SPAWN_EGG.get());
-                    output.accept(SHANLINSHOUZHE_SPAWN_EGG.get());
                     output.accept(ENTITY_ATTRIBUTE_EDITOR.get());
                 })
                 .build());
@@ -124,12 +118,6 @@ public class YizxianMod {
         modEventBus.addListener((net.minecraftforge.event.entity.EntityAttributeCreationEvent e) -> {
             e.put(YizxianEntityTypes.TAXUTI.get(),
                 net.minecraft.client.yiz.xian.entity.TaxutiEntity.createAttributes().build());
-        });
-
-        // 实体属性创建（山林首者 AttributeSupplier）
-        modEventBus.addListener((net.minecraftforge.event.entity.EntityAttributeCreationEvent e) -> {
-            e.put(YizxianEntityTypes.SHANLINSHOUZHE.get(),
-                net.minecraft.client.yiz.xian.entity.ShanlinshouzheEntity.createAttributes().build());
         });
 
         // 给玩家默认属性加涨跌多空（FIRST_DREAM/long_short，默认 0）：否则物品修饰符作用在玩家上时

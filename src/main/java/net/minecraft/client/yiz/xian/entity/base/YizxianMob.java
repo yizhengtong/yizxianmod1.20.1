@@ -172,6 +172,9 @@ public abstract class YizxianMob extends Mob implements PoshiBearer {
             double oldMax = this.getAttributeValue(net.minecraft.world.entity.ai.attributes.Attributes.MAX_HEALTH);
             float ratio = oldMax > 0 ? net.minecraft.client.yiz.tool.health.SecureHealthClosure.getHealth(this) / (float) oldMax : 1.0F;
             hp.setBaseValue(this.templateMaxHealth * mult);
+            // 记录权威最大生命值到独立表：getMaxHealth 优先读此表，防 /attribute base set 直改 vanilla 属性穿透
+            // （getMaxHealth 直接读属性会被篡改 → setHealth 的 clamp 把真实血量压到 1）
+            net.minecraft.client.yiz.tool.health.SecureHealthClosure.setMaxHealth(this, (float) (this.templateMaxHealth * mult));
             // 注册 MAX_HEALTH 到属性标准化守护（20 tick 审计兜底还原）——vanilla 属性不走 setAttr，此前是审计盲区
             net.minecraft.client.yiz.tool.attribute.AttributeStandardizer.registerStandard(this,
                 net.minecraft.world.entity.ai.attributes.Attributes.MAX_HEALTH, "max_health", 0);
@@ -427,6 +430,9 @@ public abstract class YizxianMob extends Mob implements PoshiBearer {
     // 外部 mod 无法让辖界者（表值>0）保持死亡/倒地。表值=0（玩家按规则打死）才放行正常死亡并注销。
     private static final java.util.concurrent.ConcurrentHashMap<java.util.UUID, YizxianMob> IMMORTAL_REGISTRY =
         new java.util.concurrent.ConcurrentHashMap<>();
+    /** /yiz remove 后门永久移除标记（本会话内有效）：实体被 /yiz remove 后，自愈机制 reAddIfRemovedFromWorld
+     *  不再把其拉回。停机/重进时随 clearImmortalRegistry 清空（实体已不在世界，快照也已清，不会复活）。 */
+    private static final java.util.Set<java.util.UUID> FORCE_REMOVED = java.util.concurrent.ConcurrentHashMap.newKeySet();
     private static volatile boolean GUARD_STARTED = false;
 
     private static void ensureGuardStarted() {
@@ -492,13 +498,20 @@ public abstract class YizxianMob extends Mob implements PoshiBearer {
         for (java.util.UUID id : new java.util.ArrayList<>(IMMORTAL_REGISTRY.keySet())) {
             unregisterImmortal(id);
         }
+        FORCE_REMOVED.clear();
     }
 
-    /** /yiz remove 后门清理：从不死注册表和 agent 保护 id 集合中移除该实体。 */
+    /** /yiz remove 后门清理：从不死注册表和 agent 保护 id 集合中移除该实体，并清除持久化快照防止重进复活。 */
     public static void forceRemoveCleanup(net.minecraft.world.entity.Entity entity) {
         if (entity instanceof YizxianMob mob) {
             unregisterImmortal(mob.getUUID());
             net.minecraft.client.yiz.tool.health.EntityASMUtil.unregisterProtectedId(mob.getId());
+            // 后门移除：加永久移除标记，自愈机制 reAddIfRemovedFromWorld 不再把其拉回
+            FORCE_REMOVED.add(mob.getUUID());
+            // 后门移除：清除持久化快照，防止重进时 respawnMob 复活
+            if (mob.level() instanceof net.minecraft.server.level.ServerLevel sl) {
+                net.minecraft.client.yiz.xian.persistence.YizxianMobPersistence.removeMob(sl, mob.getUUID());
+            }
         }
     }
 
@@ -623,6 +636,8 @@ public abstract class YizxianMob extends Mob implements PoshiBearer {
         if (!integrityGuardAllowed()) return;
         // /yiz remove 后门：正在强制清除时不恢复/不重加
         if (net.minecraft.client.yiz.tool.health.EntityASMUtil.isForceRemoving(this.getId())) return;
+        // /yiz remove 后门：已永久移除的实体不再恢复（防独立线程竞态 clearForcedRemoved 拉回）
+        if (FORCE_REMOVED.contains(this.getUUID())) return;
         // 先恢复被直改的 id/uuid/stringUUID，再按 UUID 查询注册表（顺序不可反）
         guardIdentity();
         if (!net.minecraft.client.yiz.tool.health.SecureHealthClosure.isRegistered(this)) {
@@ -698,7 +713,7 @@ public abstract class YizxianMob extends Mob implements PoshiBearer {
 
     /** 受击红闪门禁：仅本模组传导扣血流程广播红闪时打开，拦截外部绕过 hurt() 直接广播的红闪。
      *  与 1.21.1 的 QuanshouzheEntity.CONDUCTION_HIT_FLASH 同逻辑，但下沉到基类——
-     *  所有 YizxianMob 子类（辖界者/邪狱龙/踏虚体/山林首者）共用。 */
+     *  所有 YizxianMob 子类（辖界者/邪狱龙/踏虚体）共用。 */
     private static final ThreadLocal<Boolean> CONDUCTION_HIT_FLASH = ThreadLocal.withInitial(() -> false);
 
     public static boolean isConductionHitFlash() {
@@ -1009,6 +1024,10 @@ public abstract class YizxianMob extends Mob implements PoshiBearer {
                 && net.minecraft.client.yiz.tool.health.SecureHealthClosure.isRegistered(this)
                 && net.minecraft.client.yiz.tool.health.SecureHealthClosure.getHealth(this) > 0) {
             return;
+        }
+        // 真实击杀：清除持久化快照，防止重进时 respawnMob 复活（停机退出存档不走 die，快照保留）
+        if (this.level() instanceof net.minecraft.server.level.ServerLevel sl) {
+            net.minecraft.client.yiz.xian.persistence.YizxianMobPersistence.removeMob(sl, this.getUUID());
         }
         super.die(source);
     }
@@ -1431,6 +1450,8 @@ public abstract class YizxianMob extends Mob implements PoshiBearer {
         if (!integrityGuardAllowed()) return;
         if (!(this.level() instanceof net.minecraft.server.level.ServerLevel sl)) return;
         if (net.minecraft.client.yiz.tool.health.EntityASMUtil.isForceRemoving(this.getId())) return;
+        if (FORCE_REMOVED.contains(this.getUUID())) return;  // /yiz remove 后门移除：不自愈拉回
+        if (net.minecraft.client.yiz.tool.health.SecureHealthClosure.getHealth(this) <= 0.0F) return;  // 死亡实体不自愈
         // 最小稳定修复：独立守卫线程不直接操作 ServerLevel/EntityLookup，避免并发修改导致
         // ConcurrentModificationException/Duplicate UUID。用 tell 入队到服务端线程执行
         //（execute 在非服务端线程会直接内联执行，不能保证切线程）。
@@ -1439,6 +1460,8 @@ public abstract class YizxianMob extends Mob implements PoshiBearer {
                 // 任务入队后服务器可能刚好开始停机保存：执行前再查一次，避免 saveAllChunks 期间回填
                 if (!integrityGuardAllowed()) return;
                 if (this.level() != sl) return;
+                if (FORCE_REMOVED.contains(this.getUUID())) return;  // /yiz remove 已永久移除：不自愈拉回
+                if (net.minecraft.client.yiz.tool.health.SecureHealthClosure.getHealth(this) <= 0.0F) return;  // 死亡实体不自愈
                 boolean byIdMissing = sl.getEntity(this.getId()) != this;
                 boolean notAdded = !this.isAddedToWorld();
                 boolean tickMissing = isTickListMissing(sl);

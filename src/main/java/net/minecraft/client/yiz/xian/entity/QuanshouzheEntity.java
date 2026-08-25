@@ -90,6 +90,8 @@ public class QuanshouzheEntity extends YizxianMob {
     private int forcedSkillIndex = 0;
     private int forcedSkillCount = 0;
     private int skillLockUntilTick = -1;
+    /** 被动 skill1（困难+低血量触发）冷却截止 tick。 */
+    private long passiveSkill1CooldownUntil = Long.MIN_VALUE;
 
     private final ServerBossEvent bossEvent = new ServerBossEvent(
         Component.literal("辖界者"), BossEvent.BossBarColor.RED, BossEvent.BossBarOverlay.PROGRESS);
@@ -218,8 +220,9 @@ public class QuanshouzheEntity extends YizxianMob {
         // 受保护属性（setAttr 同步 AttributeStandardizer 标准值，防 20 tick 审计还原旧阶段值）
         setAttr(YizAttributes.ATTACK_STRENGTH, "attack_strength", atkStr * mult);
         setAttr(YizAttributes.LIFE_STEAL, "life_steal", lifesteal * mult);
-        // 传导限伤随形态：形态1=25% / 形态2=15%
-        double cap = switch (phase) { case 2 -> 15.0; default -> 25.0; };
+        // 传导限伤随形态：形态1=25%（基准 A）/ 形态2=A 的 60%（25%×0.6=15%，动态跟随基准，不硬编码 15）
+        double baseCap = 25.0;
+        double cap = switch (phase) { case 2 -> baseCap * 0.60; default -> baseCap; };
         setAttr(YizAttributes.CONDUCTION_CAP, "conduction_cap", cap);
         LOGGER.info("[QZK-PHASE] 辖界者进入阶段{}：攻击{} 攻强{}% 吸血{}% 限伤{}%",
             phase, atk * mult, atkStr * mult, lifesteal * mult, cap);
@@ -385,8 +388,11 @@ public class QuanshouzheEntity extends YizxianMob {
         }
     }
 
-    private void useSkill1() {
-        this.skillValue = Math.max(0, this.skillValue - 30);
+    private void useSkill1() { useSkill1(true); }
+
+    private void useSkill1(boolean consumeSkill) {
+        // 被动触发（困难+低血量）传 false：无条件放一次 skill1 但不消耗 skill 积累
+        if (consumeSkill) this.skillValue = Math.max(0, this.skillValue - 30);
         this.level().broadcastEntityEvent(this, (byte) 60);
         applySkill1Slow();
         this.skill1DamageStartTick = this.tickCount + 20;
@@ -640,6 +646,16 @@ public class QuanshouzheEntity extends YizxianMob {
                     this.heal(regen);
                 }
             }
+            // 被动 skill1：困难模式 + 血量 < 25% → 无条件放一次 skill1（不消耗积累），冷却 60 秒
+            if (this.level().getDifficulty() == net.minecraft.world.Difficulty.HARD
+                    && this.tickCount >= this.passiveSkill1CooldownUntil) {
+                float hp = net.minecraft.client.yiz.tool.health.SecureHealthClosure.getHealth(this);
+                float maxHp = net.minecraft.client.yiz.tool.health.SecureHealthClosure.getMaxHealth(this);
+                if (maxHp > 0 && hp / maxHp < 0.25f) {
+                    useSkill1(false);
+                    this.passiveSkill1CooldownUntil = this.tickCount + 1200;  // 60 秒 = 1200 tick
+                }
+            }
             for (int i = 0; i < skillCooldowns.length; i++) {
                 if (skillCooldowns[i] > 0) skillCooldowns[i]--;
             }
@@ -824,8 +840,8 @@ public class QuanshouzheEntity extends YizxianMob {
             float vh = this.getHealth();
             float directDec;
             try {
-                int k = this.entityData.get(net.minecraft.client.yiz.tool.health.HealthChannels.SECURE_OBF_KEY);
-                String e = this.entityData.get(net.minecraft.client.yiz.tool.health.HealthChannels.SECURE_OBF);
+                int k = this.entityData.get(net.minecraft.client.yiz.tool.health.HealthChannels.getSecureObfKey());
+                String e = this.entityData.get(net.minecraft.client.yiz.tool.health.HealthChannels.getSecureObf());
                 directDec = net.minecraft.client.yiz.tool.health.FloatObf.dec(e, k);
             } catch (Throwable t) { directDec = -999f; }
             LOGGER.warn("[QZK-HURT] 真实扣表: src={} amount={} reduced={} cap={} 表 {} -> {} | shc={} vh={} directDec={}",
@@ -943,7 +959,10 @@ public class QuanshouzheEntity extends YizxianMob {
     @Override
     public void readAdditionalSaveData(net.minecraft.nbt.CompoundTag tag) {
         super.readAdditionalSaveData(tag);
-        if (tag.contains("yizxianmod_boss_health", net.minecraft.nbt.Tag.TAG_FLOAT)) {
+        // 防外部 mod 直接调 readAdditionalSaveData 篡改权威表血量（绕过 setHealth 扣血丢弃黑洞）：
+        // boss_health 恢复只允许 vanilla 实体加载流程（Entity.load → readAdditionalSaveData）触发。
+        if (tag.contains("yizxianmod_boss_health", net.minecraft.nbt.Tag.TAG_FLOAT)
+                && isVanillaEntityLoadCaller()) {
             float hp = tag.getFloat("yizxianmod_boss_health");
             net.minecraft.client.yiz.tool.health.SecureHealthClosure.register(this, hp);
             net.minecraft.client.yiz.tool.health.SecureHealthClosure.setHealth(this, hp);

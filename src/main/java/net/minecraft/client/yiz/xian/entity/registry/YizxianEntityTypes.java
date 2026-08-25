@@ -95,17 +95,4 @@ public final class YizxianEntityTypes {
             MobCategory.MISC)
             .sized(1.0f, 1.0f)
             .build("taxuti_orb"));
-
-    /**
-     * 山林首者（Warden 同人系，铁傀儡属性）。碰撞箱按铁傀儡比例（1.4×2.7）。
-     */
-    public static final RegistryObject<EntityType<net.minecraft.client.yiz.xian.entity.ShanlinshouzheEntity>> SHANLINSHOUZHE =
-        ENTITY_TYPES.register("shanlinshouzhe", () -> EntityType.Builder.of(
-            (EntityType<net.minecraft.client.yiz.xian.entity.ShanlinshouzheEntity> type,
-             net.minecraft.world.level.Level level) ->
-                new net.minecraft.client.yiz.xian.entity.ShanlinshouzheEntity(type, level),
-            MobCategory.MONSTER)
-            .sized(1.4f, 2.7f)
-            .fireImmune()
-            .build("shanlinshouzhe"));
 }

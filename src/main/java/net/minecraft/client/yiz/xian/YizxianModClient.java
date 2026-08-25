@@ -52,17 +52,11 @@ public class YizxianModClient {
         event.registerEntityRenderer(
             net.minecraft.client.yiz.xian.entity.registry.YizxianEntityTypes.TAXUTI_ORB.get(),
             net.minecraft.client.yiz.xian.client.renderer.NoopEntityRenderer::new);
-        // 山林首者
-        event.registerEntityRenderer(
-            net.minecraft.client.yiz.xian.entity.registry.YizxianEntityTypes.SHANLINSHOUZHE.get(),
-            net.minecraft.client.yiz.xian.client.renderer.ShanlinshouzheRenderer::new);
     }
 
     @SubscribeEvent
     public static void onRegisterLayerDefinitions(EntityRenderersEvent.RegisterLayerDefinitions event) {
         event.registerLayerDefinition(QuanshouzheRenderer.LAYER,
             net.minecraft.client.yiz.xian.client.model.QuanshouzheModel::createBodyLayer);
-        event.registerLayerDefinition(net.minecraft.client.yiz.xian.client.renderer.ShanlinshouzheRenderer.LAYER,
-            net.minecraft.client.yiz.xian.client.model.ShanlinshouzheModel::createBodyLayer);
     }
 }

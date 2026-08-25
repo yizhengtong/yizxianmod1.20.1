@@ -157,7 +157,7 @@ public class TaxutiEntity extends YizxianMob implements GeoEntity {
         setAttr(YizAttributes.INVINCIBILITY_MULT, "invincibility_mult", 24.0);
         setAttr(YizAttributes.ARMOR, "armor", scaleDifficulty(30.0));
         setAttr(YizAttributes.SPELL_DEFENSE, "spell_defense", scaleDifficulty(30.0));
-        setAttr(YizAttributes.CONDUCTION_CAP, "conduction_cap", 4.0);
+        setAttr(YizAttributes.CONDUCTION_CAP, "conduction_cap", 40.0);
         setAttr(YizAttributes.SECURE_PULSE, "secure_pulse", 1.0);
         // 涨跌多空 = 攻击力 × 50% 转换率
         double dream = this.getAttributeValue(Attributes.ATTACK_DAMAGE) * 0.5;

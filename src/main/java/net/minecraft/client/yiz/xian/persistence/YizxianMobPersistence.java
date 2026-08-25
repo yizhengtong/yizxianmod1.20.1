@@ -95,6 +95,16 @@ public class YizxianMobPersistence extends SavedData {
         p.setDirty();
     }
 
+    /** 删除单个辖界者的快照（真实击杀 / /yiz remove 后门移除后调用，防止重进时 respawnMob 复活）。
+     *  停机退出存档不走此方法，快照保留（正常退出重进辖界者仍在）。 */
+    public static void removeMob(ServerLevel level, java.util.UUID uuid) {
+        if (level == null || level.isClientSide() || uuid == null) return;
+        YizxianMobPersistence p = get(level);
+        if (p.mobs.remove(uuid) != null) {
+            p.setDirty();
+        }
+    }
+
     /** 从快照恢复：world 里没有对应 UUID 的辖界者时，重新 spawn 并精确恢复血量。 */
     public static void restoreMobs(ServerLevel level) {
         if (level == null || level.isClientSide()) return;
