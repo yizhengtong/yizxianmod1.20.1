@@ -71,14 +71,23 @@ public class QuanshouzheEntity extends YizxianMob {
     private static final java.util.UUID RAGE_SPEED_ID =
         java.util.UUID.nameUUIDFromBytes((YizxianMod.MODID + ":quanshouzhe_rage_speed").getBytes(java.nio.charset.StandardCharsets.UTF_8));
 
-    private static final EntityDataAccessor<Integer> DATA_CAST_PHASE =
-        SynchedEntityData.defineId(QuanshouzheEntity.class, EntityDataSerializers.INT);
-    private static final EntityDataAccessor<Boolean> DATA_RAGING =
-        SynchedEntityData.defineId(QuanshouzheEntity.class, EntityDataSerializers.BOOLEAN);
-    private static final EntityDataAccessor<Boolean> DATA_HEAVY_ATTACK =
-        SynchedEntityData.defineId(QuanshouzheEntity.class, EntityDataSerializers.BOOLEAN);
-    private static final EntityDataAccessor<Integer> DATA_FORM_PHASE =
-        SynchedEntityData.defineId(QuanshouzheEntity.class, EntityDataSerializers.INT);
+    // defineId 懒加载（holder + getter）：static final 字段会在类加载期执行 defineId，
+    // 若 QuanshouzheEntity 被提前加载（vanilla Entity 之前）会抢占 DataParameter id 0 → 召唤报
+    // Duplicate id value for 0。延迟到 getter 首次访问（实体构造时 vanilla 已 defineId）。
+    private static final class DataHolder {
+        static final EntityDataAccessor<Integer> CAST_PHASE =
+            SynchedEntityData.defineId(QuanshouzheEntity.class, EntityDataSerializers.INT);
+        static final EntityDataAccessor<Boolean> RAGING =
+            SynchedEntityData.defineId(QuanshouzheEntity.class, EntityDataSerializers.BOOLEAN);
+        static final EntityDataAccessor<Boolean> HEAVY_ATTACK =
+            SynchedEntityData.defineId(QuanshouzheEntity.class, EntityDataSerializers.BOOLEAN);
+        static final EntityDataAccessor<Integer> FORM_PHASE =
+            SynchedEntityData.defineId(QuanshouzheEntity.class, EntityDataSerializers.INT);
+    }
+    private static EntityDataAccessor<Integer> castPhase() { return DataHolder.CAST_PHASE; }
+    private static EntityDataAccessor<Boolean> raging() { return DataHolder.RAGING; }
+    private static EntityDataAccessor<Boolean> heavyAttack() { return DataHolder.HEAVY_ATTACK; }
+    private static EntityDataAccessor<Integer> formPhase() { return DataHolder.FORM_PHASE; }
 
     private final int[] skillCooldowns = new int[0];
     private int skillValue = 0;
@@ -238,16 +247,16 @@ public class QuanshouzheEntity extends YizxianMob {
     @Override
     protected void defineSynchedData() {
         super.defineSynchedData();
-        this.entityData.define(DATA_CAST_PHASE, PHASE_NONE);
-        this.entityData.define(DATA_RAGING, false);
-        this.entityData.define(DATA_HEAVY_ATTACK, false);
-        this.entityData.define(DATA_FORM_PHASE, 1);
+        this.entityData.define(castPhase(), PHASE_NONE);
+        this.entityData.define(raging(), false);
+        this.entityData.define(heavyAttack(), false);
+        this.entityData.define(formPhase(), 1);
     }
 
     @Override
     public void onSyncedDataUpdated(EntityDataAccessor<?> key) {
         super.onSyncedDataUpdated(key);
-        if (key.equals(DATA_CAST_PHASE) && level().isClientSide() && getCastPhase() != PHASE_NONE) {
+        if (key.equals(castPhase()) && level().isClientSide() && getCastPhase() != PHASE_NONE) {
             this.clientCastStartTick = level().getGameTime();
         }
         if (key.equals(DATA_POSE) && getPose() == Pose.ROARING) {
@@ -282,11 +291,11 @@ public class QuanshouzheEntity extends YizxianMob {
         return Mth.lerp(partialTick, this.tendrilAnimationO, this.tendrilAnimation) / 10.0F;
     }
 
-    public int getCastPhase() { return this.entityData.get(DATA_CAST_PHASE); }
-    public void setCastPhase(int phase) { this.entityData.set(DATA_CAST_PHASE, phase); }
+    public int getCastPhase() { return this.entityData.get(castPhase()); }
+    public void setCastPhase(int phase) { this.entityData.set(castPhase(), phase); }
 
     public boolean isRaging() { return this.tickCount < this.rageEndTick; }
-    public void setRaging(boolean raging) { this.entityData.set(DATA_RAGING, raging); }
+    public void setRaging(boolean raging) { this.entityData.set(raging(), raging); }
 
     public boolean isSkillReady(int index) { return true; }
     public void setSkillCooldown(int index, int ticks) {}
@@ -302,8 +311,8 @@ public class QuanshouzheEntity extends YizxianMob {
         return 0;
     }
 
-    public boolean isHeavyAttacking() { return this.entityData.get(DATA_HEAVY_ATTACK); }
-    public void setHeavyAttacking(boolean v) { this.entityData.set(DATA_HEAVY_ATTACK, v); }
+    public boolean isHeavyAttacking() { return this.entityData.get(heavyAttack()); }
+    public void setHeavyAttacking(boolean v) { this.entityData.set(heavyAttack(), v); }
 
     public void attackTarget(LivingEntity target) {
         PoshiBypassBridge.beginBypass();
@@ -514,18 +523,18 @@ public class QuanshouzheEntity extends YizxianMob {
     }
 
     public int getFormPhase() {
-        return this.entityData.get(DATA_FORM_PHASE);
+        return this.entityData.get(formPhase());
     }
 
     private int updateFormPhase() {
         float hp = net.minecraft.client.yiz.tool.health.SecureHealthClosure.getHealth(this);
         float maxHp = net.minecraft.client.yiz.tool.health.SecureHealthClosure.getMaxHealth(this);
         float ratio = maxHp > 0 ? hp / maxHp : 1.0F;
-        int cur = this.entityData.get(DATA_FORM_PHASE);
+        int cur = this.entityData.get(formPhase());
         if (ratio < 0.80F) {
             this.phaseRegressBufferTick = -1;
             if (cur != 2) {
-                this.entityData.set(DATA_FORM_PHASE, 2);
+                this.entityData.set(formPhase(), 2);
                 applyFormPhase(2);
             }
         } else if (cur == 2) {
@@ -533,12 +542,12 @@ public class QuanshouzheEntity extends YizxianMob {
                 this.phaseRegressBufferTick = this.tickCount;
             }
             if (this.tickCount - this.phaseRegressBufferTick >= 60) {
-                this.entityData.set(DATA_FORM_PHASE, 1);
+                this.entityData.set(formPhase(), 1);
                 this.phaseRegressBufferTick = -1;
                 applyFormPhase(1);
             }
         }
-        return this.entityData.get(DATA_FORM_PHASE);
+        return this.entityData.get(formPhase());
     }
 
     public int getAttackInterval() {
