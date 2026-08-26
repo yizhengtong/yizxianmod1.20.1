@@ -19,7 +19,9 @@
     "ChatComponentHistoryMixin",
     "PlayerAttackMixin",
     "ClientLevelEntityAddGuardMixin",
-    "EntityRenderVisibilityGuardMixin"
+    "EntityRenderVisibilityGuardMixin",
+    "AutoAttackMixin",
+    "ItemRendererGlowMixin"
   ],
   "injectors": {
     "defaultRequire": 1

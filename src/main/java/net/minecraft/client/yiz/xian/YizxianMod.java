@@ -156,6 +156,85 @@ public class YizxianMod {
         LOGGER.debug("Yiz Xian Mod 服务端启动");
     }
 
+    //  范围溅射系统（1.21.1 移植：SPLASH_RADIUS/DAMAGE/FALLOFF 属性驱动）
+
+    /** 溅射递归保护：溅射伤害的 hurt 不再触发溅射。 */
+    private static final ThreadLocal<Boolean> IN_SPLASH = ThreadLocal.withInitial(() -> false);
+
+    /** 攻击命中 LivingDamageEvent：读 SPLASH_* 属性触发范围溅射。 */
+    @SubscribeEvent
+    public void onLivingDamage(net.minecraftforge.event.entity.living.LivingDamageEvent event) {
+        if (!(event.getSource().getEntity() instanceof net.minecraft.world.entity.player.Player player)) return;
+        if (player.level().isClientSide) return;
+        if (IN_SPLASH.get()) return;
+
+        // 1.20.1 无武器 Profile（MeleeWeaponItem/WeaponLevelData 未移植，见 port-gap-list），
+        // 溅射只由 SPLASH_* 属性驱动。
+        float splashRadius = safeAttr(player, net.minecraft.client.yiz.attribute.YizAttributes.SPLASH_RADIUS);
+        if (splashRadius > 0 && event.getAmount() > 0
+                && event.getEntity() instanceof net.minecraft.world.entity.LivingEntity) {
+            net.minecraft.world.entity.LivingEntity primaryTarget =
+                (net.minecraft.world.entity.LivingEntity) event.getEntity();
+            float splashDmgPct = safeAttr(player, net.minecraft.client.yiz.attribute.YizAttributes.SPLASH_DAMAGE);
+            float splashFalloff = safeAttr(player, net.minecraft.client.yiz.attribute.YizAttributes.SPLASH_FALLOFF);
+            if (splashDmgPct > 0) {
+                executeSplash(player, primaryTarget, event.getAmount(),
+                    splashRadius, splashDmgPct, splashFalloff, event.getSource());
+            }
+        }
+    }
+
+    /**
+     * 范围溅射伤害：以被命中目标为中心，对范围内有效实体造成伤害。
+     * 目标判定：敌对生物(Monster)始终命中 + 与主目标同类型命中；其他不受。
+     * 衰减公式（平滑二次曲线）：t=dist/radius, edgeMul=1-falloff/100,
+     * multiplier = edgeMul + (1-edgeMul)*(1-t²), dmg = base*(pct/100)*multiplier。
+     */
+    private static void executeSplash(net.minecraft.world.entity.player.Player player,
+                                      net.minecraft.world.entity.LivingEntity primaryTarget, float baseDamage,
+                                      float radius, float splashPct, float falloff,
+                                      net.minecraft.world.damagesource.DamageSource source) {
+        net.minecraft.world.phys.AABB box = primaryTarget.getBoundingBox().inflate(radius);
+        java.util.List<net.minecraft.world.entity.LivingEntity> nearby = primaryTarget.level().getEntitiesOfClass(
+            net.minecraft.world.entity.LivingEntity.class, box,
+            e -> e != player && e != primaryTarget && e.isAlive()
+                 && isValidSplashTarget(e, primaryTarget));
+
+        IN_SPLASH.set(true);
+        try {
+            for (net.minecraft.world.entity.LivingEntity target : nearby) {
+                double dist = primaryTarget.position().distanceTo(target.position());
+                float t = (float) Math.min(dist / radius, 1.0);
+                float edgeMul = 1.0f - falloff / 100.0f;
+                float smoothMul = edgeMul + (1.0f - edgeMul) * (1.0f - t * t);
+                float dmg = baseDamage * (splashPct / 100.0f) * smoothMul;
+                if (dmg > 0) {
+                    // 用无直接实体的 DamageSource 防止 modifyHurtAmount 二次放大
+                    target.hurt(new net.minecraft.world.damagesource.DamageSource(
+                        source.typeHolder(), null, player), dmg);
+                }
+            }
+        } finally {
+            IN_SPLASH.set(false);
+        }
+    }
+
+    /** 判定候选实体是否应受到溅射伤害。 */
+    private static boolean isValidSplashTarget(net.minecraft.world.entity.LivingEntity candidate,
+                                               net.minecraft.world.entity.LivingEntity primaryTarget) {
+        // 敌对生物(Monster 类别)始终命中
+        if (candidate.getType().getCategory() == net.minecraft.world.entity.MobCategory.MONSTER) return true;
+        return candidate.getClass() == primaryTarget.getClass();
+    }
+
+    /** 安全读取前置库属性值，不存在返回 0（1.20.1：RegistryObject → .get()）。 */
+    private static float safeAttr(net.minecraft.world.entity.LivingEntity entity,
+                                  net.minecraftforge.registries.RegistryObject<net.minecraft.world.entity.ai.attributes.Attribute> attr) {
+        if (attr == null || !attr.isPresent()) return 0f;
+        var inst = entity.getAttribute(attr.get());
+        return inst != null ? (float) inst.getValue() : 0f;
+    }
+
     @SubscribeEvent
     public void onServerStarted(net.minecraftforge.event.server.ServerStartedEvent event) {
         // 延迟到下一 tick 恢复（等 chunk 实体加载），从独立 SavedData 恢复被外部模组删掉的辖界者
