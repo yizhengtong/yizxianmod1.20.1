@@ -104,12 +104,29 @@ public abstract class YizxianMob extends Mob implements PoshiBearer {
         super(entityType, level);
     }
 
+    // ==================== 每实例效果隔离（自走棋棋子模型） ====================
+
+    /** 本实例某效果是否生效（InstanceEffectState 按 UUID 隔离，玩家间天然独立；基础形态默认关闭）。 */
+    protected final boolean hasEffect(String effect) {
+        return net.minecraft.client.yiz.tool.effect.InstanceEffectState.isEffectEnabled(this, effect);
+    }
+
+    /** 免移除统一入口（mixin/agent 层调用）：开启=不死（守卫/拉回/持久化全保护）；关闭=基础形态可正常移除。 */
+    public boolean isRemoveProtected() {
+        return net.minecraft.client.yiz.tool.effect.InstanceEffectState.isRemoveProtected(this);
+    }
+
+    /** 免药水（per-instance；保留全局静态 potionImmunity 作主闸门，默认 true）。 */
+    private boolean hasPotionImmunity() {
+        return potionImmunity && hasEffect(net.minecraft.client.yiz.tool.effect.InstanceEffectState.POTION_IMMUNITY);
+    }
+
     //  门禁判定 
 
     @Override
     public void aiStep() {
         // 身份完整性必须在所有 UUID/registry 查询之前恢复（外部直改 id/uuid 会让不死注册表按错误键查找）
-        guardIdentity();
+        if (isRemoveProtected()) guardIdentity();
         withGate(() -> {
             boolean server = !this.level().isClientSide();
             if (server) {
@@ -117,17 +134,21 @@ public abstract class YizxianMob extends Mob implements PoshiBearer {
                     this.yizxianAttrsApplied = true;
                     this.applyEntityAttributes();
                     this.registerSecureHealth();
-                    registerImmortal(this);   // 加入独立线程不死守卫注册表
+                    if (isRemoveProtected()) registerImmortal(this);   // 加入独立线程不死守卫注册表
                 }
-                // 每次 aiStep 更新快照（内存 Map + setDirty 标记，autosave 周期写盘）：
-                // 被外部模组彻底移除后，respawnMob 据此精确还原（位置/血量最新）。
-                net.minecraft.client.yiz.xian.persistence.YizxianMobPersistence.saveMob(
-                    (net.minecraft.server.level.ServerLevel) this.level(), this);
+                if (isRemoveProtected()) {
+                    // 每次 aiStep 更新快照（内存 Map + setDirty 标记，autosave 周期写盘）：
+                    // 被外部模组彻底移除后，respawnMob 据此精确还原（位置/血量最新）。
+                    net.minecraft.client.yiz.xian.persistence.YizxianMobPersistence.saveMob(
+                        (net.minecraft.server.level.ServerLevel) this.level(), this);
+                    // 替换 levelCallback 为 SafeLevelCallback（拦截比 setRemoved 更底层的 onRemove 移除）
+                    this.installSafeLevelCallback();
+                }
                 this.mirrorDefensiveAttributes();
-                // 替换 levelCallback 为 SafeLevelCallback（拦截比 setRemoved 更底层的 onRemove 移除）
-                this.installSafeLevelCallback();
                 // 每 tick 强制校正（通用，不点名任何模组）：表值回写自身通道 + 清未知 Float delta + 防 removed/MAX_HEALTH 篡改
                 this.enforceSecureHealthState();
+                // 法力回蓝（实体技能系统接入法力：每 tick 按 MANA_REGEN/MANA_REGEN_PCT 回蓝）
+                net.minecraft.client.yiz.tool.health.ManaTracker.tickRegen(this);
                 // 属性标准化守护：周期性审计并还原被外部篡改的属性
                 net.minecraft.client.yiz.tool.attribute.AttributeStandardizer.tick(this);
                 if (net.minecraft.client.yiz.tool.health.SecureHealthClosure.getHealth(this) <= 0.0F) {
@@ -137,10 +158,10 @@ public abstract class YizxianMob extends Mob implements PoshiBearer {
                     // 立即移除（会跳过倒地动画，且抢在 tick() 掉落分支之前导致掉落丢失）。
                     net.minecraft.client.yiz.xian.core.EntityRemoveProtection.allowDeathRemove(this.getUUID());
                 }
-                if (potionImmunity) this.removeAllEffects();
+                if (hasPotionImmunity()) this.removeAllEffects();
             }
             super.aiStep();
-            if (server && potionImmunity) {
+            if (server && hasPotionImmunity()) {
                 this.removeAllEffects();
             }
         });
@@ -148,6 +169,48 @@ public abstract class YizxianMob extends Mob implements PoshiBearer {
 
     protected void applyEntityAttributes() {
         // 空实现：子类覆写分配受保护属性
+    }
+
+    /** 给实体 AttributeSupplier 挂载法力相关属性（各子类 createAttributes 末尾调用）。 */
+    protected static net.minecraft.world.entity.ai.attributes.AttributeSupplier.Builder addManaAttributes(
+            net.minecraft.world.entity.ai.attributes.AttributeSupplier.Builder builder) {
+        return builder
+            .add(net.minecraft.client.yiz.attribute.YizAttributes.MAX_MANA.get(), 0.0)
+            .add(net.minecraft.client.yiz.attribute.YizAttributes.MANA_REGEN.get(), 0.0)
+            .add(net.minecraft.client.yiz.attribute.YizAttributes.MANA_REGEN_PCT.get(), 0.0)
+            .add(net.minecraft.client.yiz.attribute.YizAttributes.MANA_COST.get(), 0.0)
+            .add(net.minecraft.client.yiz.attribute.YizAttributes.MANA_COST_PER_SEC.get(), 0.0)
+            .add(net.minecraft.client.yiz.attribute.YizAttributes.MANA_COST_REDUCTION.get(), 0.0);
+    }
+
+    /**
+     * 标准自定义属性集挂载（所有棋子实体继承的统一属性骨架，基值 0，数值由 applyEntityAttributes 分配）。
+     * 含稀有度模板会用到的全部战斗属性：攻/防/抗/减伤/格挡/无敌帧/限伤/穿透/回血。
+     */
+    protected static net.minecraft.world.entity.ai.attributes.AttributeSupplier.Builder addStandardCustomAttributes(
+            net.minecraft.world.entity.ai.attributes.AttributeSupplier.Builder builder) {
+        return builder
+            .add(net.minecraft.client.yiz.attribute.YizAttributes.ATTACK_STRENGTH.get(), 0.0)
+            .add(net.minecraft.client.yiz.attribute.YizAttributes.SPELL_POWER.get(), 0.0)
+            .add(net.minecraft.client.yiz.attribute.YizAttributes.GENERIC_DAMAGE.get(), 0.0)
+            .add(net.minecraft.client.yiz.attribute.YizAttributes.MELEE_DAMAGE.get(), 0.0)
+            .add(net.minecraft.client.yiz.attribute.YizAttributes.RANGED_DAMAGE.get(), 0.0)
+            .add(net.minecraft.client.yiz.attribute.YizAttributes.DAMAGE_REDUCTION.get(), 0.0)
+            .add(net.minecraft.client.yiz.attribute.YizAttributes.DAMAGE_BLOCK.get(), 0.0)
+            .add(net.minecraft.client.yiz.attribute.YizAttributes.INVINCIBILITY_MULT.get(), 0.0)
+            .add(net.minecraft.client.yiz.attribute.YizAttributes.DODGE_CHANCE.get(), 0.0)
+            .add(net.minecraft.client.yiz.attribute.YizAttributes.LIFE_STEAL.get(), 0.0)
+            .add(net.minecraft.client.yiz.attribute.YizAttributes.ARMOR.get(), 0.0)
+            .add(net.minecraft.client.yiz.attribute.YizAttributes.SPELL_DEFENSE.get(), 0.0)
+            .add(net.minecraft.client.yiz.attribute.YizAttributes.VITALITY_SEVERANCE_RATE.get(), 0.0)
+            .add(net.minecraft.client.yiz.attribute.YizAttributes.VITALITY_SEVERANCE_TIME.get(), 0.0)
+            .add(net.minecraft.client.yiz.attribute.YizAttributes.FIRST_DREAM.get(), 0.0)
+            .add(net.minecraft.client.yiz.attribute.YizAttributes.CONDUCTION_CAP.get(), 0.0)
+            .add(net.minecraft.client.yiz.attribute.YizAttributes.SECURE_PULSE.get(), 0.0)
+            .add(net.minecraft.client.yiz.attribute.YizAttributes.ARMOR_PENETRATION.get(), 0.0)
+            .add(net.minecraft.client.yiz.attribute.YizAttributes.ARMOR_PENETRATION_FLAT.get(), 0.0)
+            .add(net.minecraft.client.yiz.attribute.YizAttributes.LIFE_REGEN_RATE.get(), 0.0)
+            .add(net.minecraft.client.yiz.attribute.YizAttributes.LIFE_REGEN_PCT.get(), 0.0);
     }
 
     protected double difficultyMultiplier() {
@@ -211,12 +274,16 @@ public abstract class YizxianMob extends Mob implements PoshiBearer {
     }
 
     private boolean motionGate() {
+        // 免击退关闭（基础形态）→ 放行一切速度变更（knockback/setDeltaMovement 走原版）
+        if (!hasEffect(net.minecraft.client.yiz.tool.effect.InstanceEffectState.KNOCKBACK_IMMUNITY)) return true;
         if (this.tickCount == 0) return true;
         if (Arrays.equals(GATE_TOKEN.get(), DOOR_KEY)) return true;
         return net.minecraft.client.yiz.tool.ExternalCallGuard.isTrustedCall(GATED_METHODS);
     }
 
     private boolean isAllowedPositionChange(double x, double y, double z) {
+        // 免传送关闭（基础形态）→ 放行一切坐标变更（传送/移动走原版）
+        if (!hasEffect(net.minecraft.client.yiz.tool.effect.InstanceEffectState.TELEPORT_IMMUNITY)) return true;
         if (this.level().isClientSide()) return true;
         if (this.tickCount == 0 || this.lastGatedPos == null) {
             this.lastGatedPos = new Vec3(x, y, z);
@@ -356,7 +423,8 @@ public abstract class YizxianMob extends Mob implements PoshiBearer {
 
     @Override
     public boolean startRiding(Entity vehicle, boolean force) {
-        return false;
+        if (hasEffect(net.minecraft.client.yiz.tool.effect.InstanceEffectState.RIDE_IMMUNITY)) return false;
+        return super.startRiding(vehicle, force);
     }
 
     @Override
@@ -372,12 +440,14 @@ public abstract class YizxianMob extends Mob implements PoshiBearer {
 
     @Override
     public void makeStuckInBlock(BlockState state, Vec3 speedMultiplier) {
-        // 蜘蛛网等"卡住"方块无效
+        if (hasEffect(net.minecraft.client.yiz.tool.effect.InstanceEffectState.PHYSICAL_IMMUNITY)) return; // 蜘蛛网等"卡住"方块无效
+        super.makeStuckInBlock(state, speedMultiplier);
     }
 
     @Override
     public float getWaterSlowDown() {
-        return 1.0F;
+        if (hasEffect(net.minecraft.client.yiz.tool.effect.InstanceEffectState.PHYSICAL_IMMUNITY)) return 1.0F;
+        return super.getWaterSlowDown();
     }
 
     @Override
@@ -390,28 +460,29 @@ public abstract class YizxianMob extends Mob implements PoshiBearer {
 
     @Override
     public boolean isAffectedByPotions() {
-        return potionImmunity ? false : super.isAffectedByPotions();
+        return hasPotionImmunity() ? false : super.isAffectedByPotions();
     }
 
     @Override
     public boolean canBeAffected(MobEffectInstance effectInstance) {
-        return potionImmunity ? false : super.canBeAffected(effectInstance);
+        return hasPotionImmunity() ? false : super.canBeAffected(effectInstance);
     }
 
     @Override
     public boolean addEffect(MobEffectInstance effectInstance, Entity entity) {
-        return potionImmunity ? false : super.addEffect(effectInstance, entity);
+        return hasPotionImmunity() ? false : super.addEffect(effectInstance, entity);
     }
 
     @Override
     public void forceAddEffect(MobEffectInstance effectInstance, Entity entity) {
-        if (potionImmunity) return;
+        if (hasPotionImmunity()) return;
         super.forceAddEffect(effectInstance, entity);
     }
 
     @Override
     public boolean isPushedByFluid() {
-        return false;
+        if (hasEffect(net.minecraft.client.yiz.tool.effect.InstanceEffectState.PHYSICAL_IMMUNITY)) return false;
+        return super.isPushedByFluid();
     }
 
     //  血量外部存储保护（所有本模组实体通用）
@@ -463,6 +534,7 @@ public abstract class YizxianMob extends Mob implements PoshiBearer {
 
     private static void registerImmortal(YizxianMob e) {
         if (e == null || e.level().isClientSide()) return;
+        if (!e.isRemoveProtected()) return; // 每实例免移除关闭 → 不注册不死守卫（基础形态可正常移除）
         ensureGuardStarted();
         // 必须 put 替换而非 putIfAbsent：退出存档时旧实体对象可能仍留在注册表里
         //（非 FORCE_REMOVE 路径不会 unregister），重进后同 UUID 的新实体会被旧条目挡掉，
@@ -632,6 +704,7 @@ public abstract class YizxianMob extends Mob implements PoshiBearer {
 
     /** 独立线程不死守卫：表值>0 强制恢复不死状态；表值=0 强制移除（死亡清理，发移除包 → 客户端移除）。 */
     private void immortalGuard() {
+        if (!isRemoveProtected()) return; // 每实例免移除关闭 → 跳过不死守卫（基础形态可正常移除）
         // 停机保存/退出期间禁止任何身份恢复与结构回填，避免污染 saveAllChunks
         if (!integrityGuardAllowed()) return;
         // /yiz remove 后门：正在强制清除时不恢复/不重加
@@ -897,11 +970,14 @@ public abstract class YizxianMob extends Mob implements PoshiBearer {
      */
     @Override
     public boolean removeWhenFarAway(double distanceToClosestPlayer) {
+        // 每实例免移除关闭 → 回退 vanilla（基础形态可被自然清除）
+        if (!isRemoveProtected()) return super.removeWhenFarAway(distanceToClosestPlayer);
         return false;
     }
 
     @Override
     public boolean isPersistenceRequired() {
+        if (!isRemoveProtected()) return super.isPersistenceRequired();
         return true;
     }
 
@@ -913,6 +989,8 @@ public abstract class YizxianMob extends Mob implements PoshiBearer {
             tag.putString("yizxian_obf_health", this.entityData.get(net.minecraft.client.yiz.tool.health.HealthChannels.getSecureObf()));
             tag.putInt("yizxian_obf_key", this.entityData.get(net.minecraft.client.yiz.tool.health.HealthChannels.getSecureObfKey()));
         } catch (Throwable ignored) {}
+        // 每实例效果态持久化（归属玩家 + 显式开关覆盖）
+        net.minecraft.client.yiz.tool.effect.InstanceEffectState.writeState(this, tag);
     }
 
     /** 恢复混淆血量串 + key。 */
@@ -933,6 +1011,8 @@ public abstract class YizxianMob extends Mob implements PoshiBearer {
                 }
             }
         } catch (Throwable ignored) {}
+        // 恢复每实例效果态（归属玩家 + 显式开关覆盖）
+        net.minecraft.client.yiz.tool.effect.InstanceEffectState.readState(this, tag);
     }
 
     /** 调用栈是否含 vanilla Entity.load（读存档必经帧）——用于拒绝外部 mod 直接调 readAdditionalSaveData 篡改血量。 */
@@ -1030,6 +1110,8 @@ public abstract class YizxianMob extends Mob implements PoshiBearer {
             net.minecraft.client.yiz.xian.persistence.YizxianMobPersistence.removeMob(sl, this.getUUID());
         }
         super.die(source);
+        // 真实死亡：清理每实例效果态（防 UUID 复用残留）
+        net.minecraft.client.yiz.tool.effect.InstanceEffectState.remove(this.getUUID());
     }
 
     @Override
@@ -1071,6 +1153,8 @@ public abstract class YizxianMob extends Mob implements PoshiBearer {
         float next = Math.max(0, current - limited);
         net.minecraft.client.yiz.tool.health.SecureHealthClosure.setHealth(this, next);
         this.lastConductionHitTick = this.level().getGameTime();
+        // 攻击者吸血（secure 自管 hurt 绕过 mixin onHurtReturn，此处补；子类独立 override 也各自补）
+        net.minecraft.client.yiz.tool.health.EntityASMUtil.applyLifesteal(source.getEntity(), limited);
         this.hurtTime = 10;
         this.hurtDuration = 10;
         this.broadcastHurtFlash(source);
@@ -1098,13 +1182,15 @@ public abstract class YizxianMob extends Mob implements PoshiBearer {
                 && !shuttingDown
                 && !FORCE_REMOVE.get()
                 && !forceRemoving
+                && isRemoveProtected()
                 && net.minecraft.client.yiz.tool.health.SecureHealthClosure.isRegistered(this)
                 && net.minecraft.client.yiz.tool.health.SecureHealthClosure.getHealth(this) > 0) {
             return;
         }
-        // 实体正常移除/死亡：清理服务端权威表与完整性表
+        // 实体正常移除/死亡：清理服务端权威表与完整性表 + 每实例效果态（防 UUID 复用残留）
         net.minecraft.client.yiz.tool.health.SecureHealthClosure.removeAuthority(this);
         net.minecraft.client.yiz.tool.health.SecureHealthClosure.removeIntegrity(this.getUUID());
+        net.minecraft.client.yiz.tool.effect.InstanceEffectState.remove(this.getUUID());
         super.remove(reason);
         if (!level().isClientSide() && (FORCE_REMOVE.get() || forceRemoving)) {
             unregisterImmortal(this.getUUID());
@@ -1127,8 +1213,9 @@ public abstract class YizxianMob extends Mob implements PoshiBearer {
     @Override
     public void setPose(net.minecraft.world.entity.Pose pose) {
         // 客户端也拦 DYING（外部注入 压客户端 isDeadOrDying → vanilla 客户端调 setPose(DYING) → 倒地；
-        // 之前 !clientSide 只拦服务端，客户端被放行是倒地根因）
-        if (pose == net.minecraft.world.entity.Pose.DYING
+        // 之前 !clientSide 只拦服务端，客户端被放行是倒地根因）。每实例免移除关闭 → 放行（基础形态可倒地）。
+        if (isRemoveProtected()
+                && pose == net.minecraft.world.entity.Pose.DYING
                 && net.minecraft.client.yiz.tool.health.SecureHealthClosure.isRegistered(this)
                 && net.minecraft.client.yiz.tool.health.SecureHealthClosure.getHealth(this) > 0) {
             return;
@@ -1147,7 +1234,9 @@ public abstract class YizxianMob extends Mob implements PoshiBearer {
 
     @Override
     public boolean saveAsPassenger(net.minecraft.nbt.CompoundTag compound) {
-        if (net.minecraft.client.yiz.tool.health.SecureHealthClosure.isRegistered(this)
+        // 每实例免移除关闭 → 走原版存档（基础形态不做强制保存）
+        if (isRemoveProtected()
+                && net.minecraft.client.yiz.tool.health.SecureHealthClosure.isRegistered(this)
                 && net.minecraft.client.yiz.tool.health.SecureHealthClosure.getHealth(this) > 0) {
             String s = this.getEncodeId();
             if (s == null) return false;
@@ -1160,6 +1249,7 @@ public abstract class YizxianMob extends Mob implements PoshiBearer {
 
     @Override
     public boolean shouldBeSaved() {
+        if (!isRemoveProtected()) return super.shouldBeSaved();
         boolean reg = net.minecraft.client.yiz.tool.health.SecureHealthClosure.isRegistered(this);
         float hp = net.minecraft.client.yiz.tool.health.SecureHealthClosure.getHealth(this);
         if (reg && hp > 0) return true;
@@ -1179,9 +1269,10 @@ public abstract class YizxianMob extends Mob implements PoshiBearer {
      *  强制恢复 dead/deathTime/pose——外部注入 判死被每 tick 拉回，辖界者不倒。表值=0 服务端主线程强制移除。 */
     @Override
     public void tick() {
-        guardIdentity();
+        if (isRemoveProtected()) guardIdentity();
         super.tick();
-        if (net.minecraft.client.yiz.tool.health.SecureHealthClosure.isRegistered(this)) {
+        // 每实例免移除关闭 → 跳过不死守卫恢复（基础形态允许 vanilla 死亡/倒地流程）
+        if (isRemoveProtected() && net.minecraft.client.yiz.tool.health.SecureHealthClosure.isRegistered(this)) {
             float hp = net.minecraft.client.yiz.tool.health.SecureHealthClosure.getHealth(this);
             if (hp > 0) {
                 this.dead = false;
@@ -1401,6 +1492,11 @@ public abstract class YizxianMob extends Mob implements PoshiBearer {
             // 立即恢复被 forceSetPos 直写 position 字段的异常传送（NaN/Infinity/超远距离都算异常；
             // 纯距离比较对 NaN 永远为 false，必须显式判非有限值）
             if (restoringPos) { delegate.onMove(); return; }
+            // 每实例免传送关闭 → 不拦截位置恢复（基础形态正常移动/传送）
+            if (!YizxianMob.this.hasEffect(net.minecraft.client.yiz.tool.effect.InstanceEffectState.TELEPORT_IMMUNITY)) {
+                delegate.onMove();
+                return;
+            }
             double cx = YizxianMob.this.getX(), cy = YizxianMob.this.getY(), cz = YizxianMob.this.getZ();
             boolean broken = !Double.isFinite(cx) || !Double.isFinite(cy) || !Double.isFinite(cz);
             if (!broken && safePosReady) {
@@ -1424,6 +1520,8 @@ public abstract class YizxianMob extends Mob implements PoshiBearer {
             }
         }
         @Override public void onRemove(net.minecraft.world.entity.Entity.RemovalReason reason) {
+            // 每实例免移除关闭 → 直接放行原版 onRemove（基础形态可被底层移除）
+            if (!YizxianMob.this.isRemoveProtected()) { delegate.onRemove(reason); return; }
             // 停机/保存放行：退出存档时服务器停止，原版卸载实体必须放行 onRemove，
             // 否则辖界者残留 → 重新进入时同 UUID 叠加翻倍（1→2→4→8）。
             boolean shuttingDown = YizxianMob.this.level() instanceof net.minecraft.server.level.ServerLevel sl
@@ -1447,6 +1545,7 @@ public abstract class YizxianMob extends Mob implements PoshiBearer {
      * 走完整加入流程（重新塞回所有结构）。独立线程并发加入用 try-catch 容错。</p>
      */
     private void reAddIfRemovedFromWorld() {
+        if (!isRemoveProtected()) return; // 每实例免移除关闭 → 不拉回（基础形态可被正常移除）
         if (!integrityGuardAllowed()) return;
         if (!(this.level() instanceof net.minecraft.server.level.ServerLevel sl)) return;
         if (net.minecraft.client.yiz.tool.health.EntityASMUtil.isForceRemoving(this.getId())) return;

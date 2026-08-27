@@ -66,7 +66,7 @@ public class QuanshouzheEntity extends YizxianMob {
     // 护甲/法防指数减伤参数（与前置库 LivingEntityMixin 一致：锚定 x=20→50%、x=50→75%）
     private static final double EXP_REDUCTION_BASE = 40.0;
     private static final double EXP_REDUCTION_EXP =
-        Math.log(2.0) / Math.log(1.0 + 50.0 / EXP_REDUCTION_BASE);
+        Math.log(2.0) / Math.log(1.0 + 20.0 / EXP_REDUCTION_BASE);
     // 1.20.1 AttributeModifier 用 UUID（非 ResourceLocation）；确定性 UUID 保证 remove 幂等
     private static final java.util.UUID RAGE_SPEED_ID =
         java.util.UUID.nameUUIDFromBytes((YizxianMod.MODID + ":quanshouzhe_rage_speed").getBytes(java.nio.charset.StandardCharsets.UTF_8));
@@ -153,32 +153,17 @@ public class QuanshouzheEntity extends YizxianMob {
     }
 
     public static AttributeSupplier.Builder createAttributes() {
-        return Monster.createMonsterAttributes()
+        AttributeSupplier.Builder builder = Monster.createMonsterAttributes()
             .add(Attributes.MAX_HEALTH, 400.0)
             .add(Attributes.MOVEMENT_SPEED, 0.30)
             .add(Attributes.ATTACK_DAMAGE, 50.0)
             .add(Attributes.ARMOR, 0.0)
             .add(Attributes.KNOCKBACK_RESISTANCE, 1.0)
-            .add(Attributes.FOLLOW_RANGE, 60.0)
-            // 1.20.1 无 Attributes.STEP_HEIGHT（1.21 才加入原版）；步高由自定义属性后续补
-            // yizmodqzk 自定义属性骨架（基值 0，数值由 applyEntityAttributes 经 EntityAttributeGate 分配）
-            .add(YizAttributes.ATTACK_STRENGTH.get(), 0.0)
-            .add(YizAttributes.SPELL_POWER.get(), 0.0)
-            .add(YizAttributes.GENERIC_DAMAGE.get(), 0.0)
-            .add(YizAttributes.MELEE_DAMAGE.get(), 0.0)
-            .add(YizAttributes.RANGED_DAMAGE.get(), 0.0)
-            .add(YizAttributes.DAMAGE_REDUCTION.get(), 0.0)
-            .add(YizAttributes.DAMAGE_BLOCK.get(), 0.0)
-            .add(YizAttributes.INVINCIBILITY_MULT.get(), 0.0)
-            .add(YizAttributes.DODGE_CHANCE.get(), 0.0)
-            .add(YizAttributes.LIFE_STEAL.get(), 0.0)
-            .add(YizAttributes.ARMOR.get(), 0.0)
-            .add(YizAttributes.SPELL_DEFENSE.get(), 0.0)
-            .add(YizAttributes.VITALITY_SEVERANCE_RATE.get(), 0.0)
-            .add(YizAttributes.VITALITY_SEVERANCE_TIME.get(), 0.0)
-            .add(YizAttributes.FIRST_DREAM.get(), 0.0)
-            .add(YizAttributes.CONDUCTION_CAP.get(), 0.0)
-            .add(YizAttributes.SECURE_PULSE.get(), 0.0);
+            .add(Attributes.FOLLOW_RANGE, 60.0);
+        // 标准自定义属性集（基值 0，含护甲穿透/基础回血；数值由 applyEntityAttributes 经 EntityAttributeGate 分配）+ 法力
+        addStandardCustomAttributes(builder);
+        addManaAttributes(builder);
+        return builder;
     }
 
     /** 分配辖界者受保护自定义属性值（生成/加载后第一 tick 由 YizxianMob.aiStep 调用一次）。 */
@@ -197,6 +182,11 @@ public class QuanshouzheEntity extends YizxianMob {
         // 传导上限 = 最大生命值 × cap%；形态1 初始 25%（形态2 由 applyFormPhase 改 15%）
         setAttr(YizAttributes.CONDUCTION_CAP, "conduction_cap", 25.0);
         setAttr(YizAttributes.SECURE_PULSE, "secure_pulse", 1.0);
+        // 法力：实体技能系统接入法力（MAX_MANA 上限 + MANA_REGEN 每秒回蓝）
+        setAttr(YizAttributes.MAX_MANA, "max_mana", 200.0);
+        setAttr(YizAttributes.MANA_REGEN, "mana_regen", 20.0);
+        // 基础回血属性化（每 tick 0.05；阶段2 加速 0.08 在 aiStep 跟随阶段切换 LIFE_REGEN_RATE）
+        setAttr(YizAttributes.LIFE_REGEN_RATE, "life_regen_rate", 1.0);
         // 血量外部表注册已下沉到基类 YizxianMob.registerSecureHealth()（applyEntityAttributes 后自动执行）
     }
 
@@ -400,6 +390,8 @@ public class QuanshouzheEntity extends YizxianMob {
     private void useSkill1() { useSkill1(true); }
 
     private void useSkill1(boolean consumeSkill) {
+        // 技能耗蓝：法力不足不放技能（与玩家技能共用 ManaTracker）
+        if (!net.minecraft.client.yiz.tool.health.ManaTracker.consume(this, 20)) return;
         // 被动触发（困难+低血量）传 false：无条件放一次 skill1 但不消耗 skill 积累
         if (consumeSkill) this.skillValue = Math.max(0, this.skillValue - 30);
         this.level().broadcastEntityEvent(this, (byte) 60);
@@ -410,6 +402,7 @@ public class QuanshouzheEntity extends YizxianMob {
     }
 
     private void useSkill2() {
+        if (!net.minecraft.client.yiz.tool.health.ManaTracker.consume(this, 30)) return;
         this.skillValue = Math.max(0, this.skillValue - 45);
         this.level().broadcastEntityEvent(this, (byte) 59);
         net.minecraft.client.yiz.tool.health.HealthModificationScheduler.schedule(this,
@@ -424,6 +417,7 @@ public class QuanshouzheEntity extends YizxianMob {
     }
 
     private void useSkill3() {
+        if (!net.minecraft.client.yiz.tool.health.ManaTracker.consume(this, 50)) return;
         this.skillValue = Math.max(0, this.skillValue - 90);
         this.level().broadcastEntityEvent(this, (byte) 58);
         net.minecraft.client.yiz.tool.health.HealthModificationScheduler.schedule(this,
@@ -650,9 +644,12 @@ public class QuanshouzheEntity extends YizxianMob {
                     setAttr(YizAttributes.FIRST_DREAM, "long_short", dream);
                     this.lastDreamValue = dream;
                 }
+                // 基础回血属性化：LIFE_REGEN_RATE = 回血/0.05（ticker 公式 rate×0.05），随阶段切换
                 float regen = switch (formPhase) { case 2 -> 0.08f; default -> 0.05f; };
-                if (regen > 0 && net.minecraft.client.yiz.tool.health.SecureHealthClosure.isRegistered(this)) {
-                    this.heal(regen);
+                float rate = regen / 0.05f;
+                var rateInst = this.getAttribute(YizAttributes.LIFE_REGEN_RATE.get());
+                if (rateInst != null && Math.abs(rateInst.getValue() - rate) > 0.001) {
+                    setAttr(YizAttributes.LIFE_REGEN_RATE, "life_regen_rate", rate);
                 }
             }
             // 被动 skill1：困难模式 + 血量 < 25% → 无条件放一次 skill1（不消耗积累），冷却 60 秒
@@ -810,9 +807,14 @@ public class QuanshouzheEntity extends YizxianMob {
 
         //  护甲/法防指数减免（物理→ARMOR，其余→SPELL_DEFENSE）：与前置库 LivingEntityMixin 同一公式，
         //    让辖界者的 ARMOR/SPELL_DEFENSE 属性真正生效（override hurt 不走 vanilla 护甲公式）。
+        //    近战（直接命中实体==来源实体）判物理走 ARMOR（对齐 1.21.1；1.20.1 无 IS_PLAYER_ATTACK tag）。
+        net.minecraft.world.entity.Entity directHit = source.getDirectEntity();
+        boolean isMelee = directHit instanceof net.minecraft.world.entity.LivingEntity
+            && directHit == source.getEntity();
         boolean isPhysical = source.is(DamageTypeTags.IS_PROJECTILE)
                 || source.is(DamageTypeTags.IS_EXPLOSION)
-                || source.is(DamageTypeTags.IS_FALL);
+                || source.is(DamageTypeTags.IS_FALL)
+                || isMelee;
         var expAttr = isPhysical ? YizAttributes.ARMOR : YizAttributes.SPELL_DEFENSE;
         var expInst = this.getAttribute(expAttr.get());
         if (expInst != null && expInst.getValue() > 0) {
@@ -839,6 +841,8 @@ public class QuanshouzheEntity extends YizxianMob {
         float current = net.minecraft.client.yiz.tool.health.SecureHealthClosure.getHealth(this);
         float next = Math.max(0, current - limited);
         net.minecraft.client.yiz.tool.health.SecureHealthClosure.setHealth(this, next);
+        // 攻击者吸血（secure 自管 hurt 绕过 mixin onHurtReturn，此处补）
+        net.minecraft.client.yiz.tool.health.EntityASMUtil.applyLifesteal(source.getEntity(), limited);
         // 即时回写 vanilla DATA_HEALTH 通道（客户端血条读它），避免等 enforce 每 tick 才同步 → 血条滞后一拍
         net.minecraft.client.yiz.tool.health.EntityActuallyHurt.catchSetTrueHealth(this, next);
         // 受击诊断（限频）：确认外部伤害是否真的打到表上；三值对比定位 current 来源

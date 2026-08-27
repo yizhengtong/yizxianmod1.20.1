@@ -25,6 +25,7 @@ public abstract class EntityTickListRemoveProtectionMixin {
             at = @At("HEAD"), cancellable = true)
     private void yizxianmod$protectTicking(Entity entity, CallbackInfo ci) {
         if (!(entity instanceof YizxianMob)) return;
+        if (!((YizxianMob) entity).isRemoveProtected()) return; // 每实例免移除关闭 → 放行更新列表摘除
         if (RemovalGateAuth.isForeignStructureAccess(entity, "net.minecraft.world.level.entity.EntityTickList")) {
             ci.cancel();
         }

@@ -30,6 +30,7 @@ public abstract class ServerChunkCacheRemoveProtectionMixin {
             at = @At("HEAD"), cancellable = true)
     private void yizxianmod$protectRemoveEntity(Entity entity, CallbackInfo ci) {
         if (!(entity instanceof YizxianMob)) return;
+        if (!((YizxianMob) entity).isRemoveProtected()) return; // 每实例免移除关闭 → 放行世界存储清除
         if (entity.level().isClientSide()) return;
         // 本模组主动死亡移除（逻辑血量≤0）放行
         if (EntityRemoveProtection.consumeDeathAllow(entity.getUUID())) return;

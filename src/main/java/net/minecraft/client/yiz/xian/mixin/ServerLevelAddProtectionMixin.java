@@ -19,6 +19,7 @@ public abstract class ServerLevelAddProtectionMixin {
             at = @At("HEAD"), cancellable = true)
     private void yizxianmod$protectAdd(Entity entity, CallbackInfoReturnable<Boolean> cir) {
         if (!(entity instanceof YizxianMob)) return;
+        if (!((YizxianMob) entity).isRemoveProtected()) return; // 每实例免移除关闭 → 放行原版新增
         if (shouldAllowAdd(entity)) return;
         cir.setReturnValue(false);
     }
@@ -27,6 +28,7 @@ public abstract class ServerLevelAddProtectionMixin {
             at = @At("HEAD"), cancellable = true)
     private void yizxianmod$protectAddDuringTeleport(Entity entity, CallbackInfo ci) {
         if (!(entity instanceof YizxianMob)) return;
+        if (!((YizxianMob) entity).isRemoveProtected()) return; // 每实例免移除关闭 → 放行原版传送加入
         ci.cancel();
     }
 

@@ -60,7 +60,7 @@ public class TaxutiEntity extends YizxianMob implements GeoEntity {
 
     // 护甲/法防指数减伤参数（与辖界者一致：锚定 x=20→50%、x=50→75%）
     private static final double EXP_REDUCTION_BASE = 40.0;
-    private static final double EXP_REDUCTION_EXP = Math.log(2.0) / Math.log(1.0 + 50.0 / EXP_REDUCTION_BASE);
+    private static final double EXP_REDUCTION_EXP = Math.log(2.0) / Math.log(1.0 + 20.0 / EXP_REDUCTION_BASE);
     /** 按攻击者累积的格挡加成：每次被同一实体攻击，对其实体格挡 +1。 */
     private final Map<UUID, Integer> attackerBlockBonus = new HashMap<>();
 
@@ -119,31 +119,17 @@ public class TaxutiEntity extends YizxianMob implements GeoEntity {
     // ---- 属性 ----
 
     public static AttributeSupplier.Builder createAttributes() {
-        return Monster.createMonsterAttributes()
+        AttributeSupplier.Builder builder = Monster.createMonsterAttributes()
             .add(Attributes.MAX_HEALTH, 410.0)
             .add(Attributes.MOVEMENT_SPEED, 0.25)
             .add(Attributes.ATTACK_DAMAGE, 155.0)
             .add(Attributes.FOLLOW_RANGE, 80.0)
             .add(Attributes.KNOCKBACK_RESISTANCE, 1.0)
-            .add(Attributes.ARMOR, 0.0)
-            // yizmodqzk 自定义属性骨架（基值 0，数值由 applyEntityAttributes 经 EntityAttributeGate 分配）
-            .add(YizAttributes.ATTACK_STRENGTH.get(), 0.0)
-            .add(YizAttributes.SPELL_POWER.get(), 0.0)
-            .add(YizAttributes.GENERIC_DAMAGE.get(), 0.0)
-            .add(YizAttributes.MELEE_DAMAGE.get(), 0.0)
-            .add(YizAttributes.RANGED_DAMAGE.get(), 0.0)
-            .add(YizAttributes.DAMAGE_REDUCTION.get(), 0.0)
-            .add(YizAttributes.DAMAGE_BLOCK.get(), 0.0)
-            .add(YizAttributes.INVINCIBILITY_MULT.get(), 0.0)
-            .add(YizAttributes.DODGE_CHANCE.get(), 0.0)
-            .add(YizAttributes.LIFE_STEAL.get(), 0.0)
-            .add(YizAttributes.ARMOR.get(), 0.0)
-            .add(YizAttributes.SPELL_DEFENSE.get(), 0.0)
-            .add(YizAttributes.VITALITY_SEVERANCE_RATE.get(), 0.0)
-            .add(YizAttributes.VITALITY_SEVERANCE_TIME.get(), 0.0)
-            .add(YizAttributes.FIRST_DREAM.get(), 0.0)
-            .add(YizAttributes.CONDUCTION_CAP.get(), 0.0)
-            .add(YizAttributes.SECURE_PULSE.get(), 0.0);
+            .add(Attributes.ARMOR, 0.0);
+        // 标准自定义属性集（基值 0，含护甲穿透/基础回血；数值由 applyEntityAttributes 经 EntityAttributeGate 分配）+ 法力
+        addStandardCustomAttributes(builder);
+        addManaAttributes(builder);
+        return builder;
     }
 
     @Override
@@ -162,6 +148,11 @@ public class TaxutiEntity extends YizxianMob implements GeoEntity {
         // 涨跌多空 = 攻击力 × 50% 转换率
         double dream = this.getAttributeValue(Attributes.ATTACK_DAMAGE) * 0.5;
         setAttr(YizAttributes.FIRST_DREAM, "long_short", dream);
+        // 法力：实体技能系统接入法力
+        setAttr(YizAttributes.MAX_MANA, "max_mana", 150.0);
+        setAttr(YizAttributes.MANA_REGEN, "mana_regen", 15.0);
+        // 基础回血属性化（每 tick 1.25，rate=25 → ticker 25×0.05）
+        setAttr(YizAttributes.LIFE_REGEN_RATE, "life_regen_rate", 25.0);
     }
 
     private void setAttr(net.minecraftforge.registries.RegistryObject<net.minecraft.world.entity.ai.attributes.Attribute> attr,
@@ -186,9 +177,13 @@ public class TaxutiEntity extends YizxianMob implements GeoEntity {
         var type = source.type();
         var dmgKey = this.level().registryAccess().registryOrThrow(Registries.DAMAGE_TYPE).getKey(type);
         if (dmgKey == null || !dmgKey.getNamespace().equals("minecraft")) return false;
-        // 护甲/法防指数减免（物理→ARMOR，其余→SPELL_DEFENSE）
+        // 护甲/法防指数减免（物理→ARMOR，其余→SPELL_DEFENSE；近战判物理走 ARMOR）
+        net.minecraft.world.entity.Entity directHit = source.getDirectEntity();
+        boolean isMelee = directHit instanceof net.minecraft.world.entity.LivingEntity
+            && directHit == source.getEntity();
         boolean isPhysical = source.is(DamageTypeTags.IS_PROJECTILE)
-            || source.is(DamageTypeTags.IS_EXPLOSION) || source.is(DamageTypeTags.IS_FALL);
+            || source.is(DamageTypeTags.IS_EXPLOSION) || source.is(DamageTypeTags.IS_FALL)
+            || isMelee;
         var expAttr = isPhysical ? YizAttributes.ARMOR : YizAttributes.SPELL_DEFENSE;
         var expInst = this.getAttribute(expAttr.get());
         if (expInst != null && expInst.getValue() > 0) {
@@ -216,6 +211,8 @@ public class TaxutiEntity extends YizxianMob implements GeoEntity {
         float current = net.minecraft.client.yiz.tool.health.SecureHealthClosure.getHealth(this);
         float next = Math.max(0, current - limited);
         net.minecraft.client.yiz.tool.health.SecureHealthClosure.setHealth(this, next);
+        // 攻击者吸血（secure 自管 hurt 绕过 mixin onHurtReturn，此处补）
+        net.minecraft.client.yiz.tool.health.EntityASMUtil.applyLifesteal(source.getEntity(), limited);
         net.minecraft.client.yiz.tool.health.EntityActuallyHurt.catchSetTrueHealth(this, next);
         this.lastConductionHitTick = this.level().getGameTime();
         this.invulnerableTime = (int) conductionHitCdTicks();
@@ -250,10 +247,7 @@ public class TaxutiEntity extends YizxianMob implements GeoEntity {
 
     private void serverTick() {
         this.clearInvalidTarget();
-        // 每 tick 回血
-        if (this.getHealth() < this.getMaxHealth() && this.isAlive()) {
-            this.heal(1.25f);
-        }
+        // 每 tick 回血已属性化：LIFE_REGEN_RATE=25 → ticker 25×0.05=1.25/秒（AttributeEffectTicker 每 tick 应用）
         this.updateSkills();
         this.updateTeleport();
         this.updateMelee();
@@ -289,8 +283,10 @@ public class TaxutiEntity extends YizxianMob implements GeoEntity {
         if (target == null || !target.isAlive()) return;
         if (this.orbCooldown > 0) this.orbCooldown--;
         if (this.orbCooldown <= 0) {
-            this.spawnOrbAt(target);
-            this.orbCooldown = 330;
+            if (net.minecraft.client.yiz.tool.health.ManaTracker.consume(this, 40)) {
+                this.spawnOrbAt(target);
+                this.orbCooldown = 330;
+            }
         }
     }
 

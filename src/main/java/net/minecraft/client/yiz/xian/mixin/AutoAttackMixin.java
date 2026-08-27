@@ -49,7 +49,7 @@ public abstract class AutoAttackMixin {
         }
     }
 
-    /** 检查玩家是否正在瞄准一个可攻击的实体且在近战范围内（1.20.1 实体攻击距离硬编码 3.0）。 */
+    /** 检查玩家是否正在瞄准一个可攻击的实体且在近战范围内（对齐 1.21.1 交互距离：ENTITY_REACH 默认 3.0 + ATTACK_RANGE 镜像）。 */
     private static boolean isAimingAtAttackableEntity(LocalPlayer player) {
         var hit = Minecraft.getInstance().hitResult;
         if (hit == null) return false;
@@ -57,6 +57,11 @@ public abstract class AutoAttackMixin {
         var entity = ehr.getEntity();
         if (entity == null || entity == player) return false;
         if (!(entity instanceof LivingEntity)) return false;
-        return player.distanceTo(entity) <= 3.0;
+        double reach = 3.0;
+        try {
+            var reachInst = player.getAttribute(net.minecraftforge.common.ForgeMod.ENTITY_REACH.get());
+            if (reachInst != null) reach = Math.max(3.0, reachInst.getValue());
+        } catch (Throwable ignored) {}
+        return player.distanceTo(entity) <= reach;
     }
 }

@@ -23,6 +23,7 @@ public abstract class ChunkMapRemoveProtectionMixin {
             at = @At("HEAD"), cancellable = true)
     private void yizxianmod$protectTracking(Entity entity, CallbackInfo ci) {
         if (!(entity instanceof YizxianMob)) return;
+        if (!((YizxianMob) entity).isRemoveProtected()) return; // 每实例免移除关闭 → 放行跟踪摘除
         if (RemovalGateAuth.isForeignStructureAccess(entity, "net.minecraft.server.level.ChunkMap")) {
             ci.cancel();
         }

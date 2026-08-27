@@ -25,6 +25,7 @@ public abstract class EntitySectionRemoveProtectionMixin {
             at = @At("HEAD"), cancellable = true)
     private void yizxianmod$protectSection(EntityAccess entityAccess, CallbackInfoReturnable<Boolean> cir) {
         if (!(entityAccess instanceof YizxianMob)) return;
+        if (!((YizxianMob) entityAccess).isRemoveProtected()) return; // 每实例免移除关闭 → 放行区段摘除
         Entity entity = (Entity) entityAccess;
         if (RemovalGateAuth.isForeignStructureAccess(entity, "net.minecraft.world.level.entity.EntitySection")) {
             cir.setReturnValue(false);

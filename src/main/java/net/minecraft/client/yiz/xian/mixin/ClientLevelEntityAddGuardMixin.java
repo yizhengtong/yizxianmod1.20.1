@@ -23,6 +23,7 @@ public abstract class ClientLevelEntityAddGuardMixin {
             at = @At("HEAD"), cancellable = true)
     private void yizxianmod$guardClientAdd(int id, Entity entity, CallbackInfo ci) {
         if (!(entity instanceof YizxianMob)) return;
+        if (!((YizxianMob) entity).isRemoveProtected()) return; // 每实例免移除关闭 → 放行原版客户端加入
         if (ClientPresenceGuard.forceAdd((ClientLevel) (Object) this, id, entity)) {
             ci.cancel();
         }

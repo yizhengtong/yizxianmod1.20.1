@@ -25,6 +25,7 @@ public abstract class EntityRenderVisibilityGuardMixin {
     private <E extends Entity> void yizxianmod$guardVisibility(E entity, Frustum frustum, double camX, double camY,
                                                                double camZ, CallbackInfoReturnable<Boolean> cir) {
         if (!(entity instanceof YizxianMob)) return;
+        if (!((YizxianMob) entity).isRemoveProtected()) return; // 每实例免移除关闭 → 放行原版可见性判定
         try {
             EntityRenderer<? super E> renderer = ((EntityRenderDispatcher) (Object) this).getRenderer(entity);
             if (renderer != null) {

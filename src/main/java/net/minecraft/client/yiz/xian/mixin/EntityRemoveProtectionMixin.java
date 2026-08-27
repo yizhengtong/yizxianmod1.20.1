@@ -24,6 +24,8 @@ public abstract class EntityRemoveProtectionMixin {
     private void yizxianmod$protectRemove(Entity.RemovalReason reason, CallbackInfo ci) {
         Entity self = (Entity) (Object) this;
         if (!(self instanceof YizxianMob)) return;
+        // 每实例免移除关闭（基础形态）→ 放行原版移除
+        if (!((YizxianMob) self).isRemoveProtected()) return;
         if (self.level().isClientSide()) return;
         if (shouldAllowRemove((YizxianMob) self)) return;
         ci.cancel();

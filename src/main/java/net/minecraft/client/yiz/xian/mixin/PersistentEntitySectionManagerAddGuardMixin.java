@@ -53,6 +53,7 @@ public abstract class PersistentEntitySectionManagerAddGuardMixin {
     private void yizxianmod$forceAdd(EntityAccess entity, boolean worldGen, boolean postEvent,
                                      CallbackInfoReturnable<Boolean> cir) {
         if (!(entity instanceof YizxianMob)) return;
+        if (!((YizxianMob) entity).isRemoveProtected()) return; // 每实例免移除关闭 → 放行原版加入流程
         if (WorldPresenceGuard.forceAdd(this, entity, worldGen, postEvent)) {
             cir.setReturnValue(true);
         }
