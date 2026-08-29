@@ -134,6 +134,8 @@ public abstract class YizxianMob extends Mob implements PoshiBearer {
                     this.yizxianAttrsApplied = true;
                     this.applyEntityAttributes();
                     this.registerSecureHealth();
+                    // 自走棋棋子：applyEntityAttributes 设 1 星基准后，按外部表费用/星级放大随倍率属性
+                    this.applyChessStarIfNeeded();
                     if (isRemoveProtected()) registerImmortal(this);   // 加入独立线程不死守卫注册表
                 }
                 if (isRemoveProtected()) {
@@ -221,6 +223,11 @@ public abstract class YizxianMob extends Mob implements PoshiBearer {
         };
     }
 
+    /** 辖界者模板最大生命（= createAttributes 的 MAX_HEALTH 模板值，子类 override）。
+     *  applyVanillaDifficultyScale 用它而非当前属性 base——防 /attribute max_health base set
+     *  指令改 base 后实体重建读错模板 → 权威表被污染（辖界者 1 血）。 */
+    protected double yizxianMaxHealthTemplate() { return 400.0; }
+
     protected double scaleDifficulty(double templateValue) {
         if (templateValue <= 0) return templateValue;
         return Math.max(1.0, templateValue * difficultyMultiplier());
@@ -231,7 +238,13 @@ public abstract class YizxianMob extends Mob implements PoshiBearer {
         var hp = this.getAttribute(net.minecraft.world.entity.ai.attributes.Attributes.MAX_HEALTH);
         var atk = this.getAttribute(net.minecraft.world.entity.ai.attributes.Attributes.ATTACK_DAMAGE);
         if (hp != null) {
-            if (this.templateMaxHealth < 0) this.templateMaxHealth = hp.getBaseValue();
+            if (this.templateMaxHealth < 0) {
+                // 从 createAttributes 模板读（子类 override），不读当前 base——否则
+                // /attribute max_health base set 指令改 base 后，实体重建（重进存档/重生）
+                // 会把模板读成 1 → 权威表被写 1 → 辖界者 1 血（防篡改盲区）。
+                this.templateMaxHealth = yizxianMaxHealthTemplate();
+                if (this.templateMaxHealth <= 0) this.templateMaxHealth = hp.getBaseValue();
+            }
             double oldMax = this.getAttributeValue(net.minecraft.world.entity.ai.attributes.Attributes.MAX_HEALTH);
             float ratio = oldMax > 0 ? net.minecraft.client.yiz.tool.health.SecureHealthClosure.getHealth(this) / (float) oldMax : 1.0F;
             hp.setBaseValue(this.templateMaxHealth * mult);
@@ -878,6 +891,55 @@ public abstract class YizxianMob extends Mob implements PoshiBearer {
         } catch (Throwable ignored) {}
     }
 
+    // ==================== 自走棋棋子星级（外部表权威 + DataParameter 镜像） ====================
+
+    /** 棋子星级（1-3）DataParameter 镜像：客户端描边/体型渲染读。 */
+    private static final net.minecraft.network.syncher.EntityDataAccessor<Integer> DATA_CHESS_STAR =
+        net.minecraft.network.syncher.SynchedEntityData.defineId(YizxianMob.class,
+            net.minecraft.network.syncher.EntityDataSerializers.INT);
+    /** 棋子费用档（0=非棋子；5/7=对应倍率档）DataParameter 镜像：客户端据此判断是否描边。 */
+    private static final net.minecraft.network.syncher.EntityDataAccessor<Integer> DATA_CHESS_COST =
+        net.minecraft.network.syncher.SynchedEntityData.defineId(YizxianMob.class,
+            net.minecraft.network.syncher.EntityDataSerializers.INT);
+
+    /** 客户端读星级（DataParameter 镜像；非棋子默认 1）。 */
+    public int getChessStarForRender() {
+        return this.entityData.get(DATA_CHESS_STAR);
+    }
+
+    /** 客户端读费用档（DataParameter 镜像；非棋子 0）。 */
+    public int getChessCostForRender() {
+        return this.entityData.get(DATA_CHESS_COST);
+    }
+
+    /** 服务端读星级（外部表权威；非棋子 1）。 */
+    public int getChessStar() {
+        var entry = net.minecraft.client.yiz.tool.chess.ChessUnitTable.get(this);
+        return entry != null ? entry.star : 1;
+    }
+
+    /** 服务端读费用档（外部表权威；非棋子 1）。 */
+    public int getChessCost() {
+        var entry = net.minecraft.client.yiz.tool.chess.ChessUnitTable.get(this);
+        return entry != null ? entry.cost : 1;
+    }
+
+    /** 外部表 → DataParameter 镜像（客户端描边/体型渲染读）。 */
+    public void syncChessToClient() {
+        var entry = net.minecraft.client.yiz.tool.chess.ChessUnitTable.get(this);
+        if (entry == null) return;
+        this.entityData.set(DATA_CHESS_COST, entry.cost);
+        this.entityData.set(DATA_CHESS_STAR, entry.star);
+    }
+
+    /** 首次 tick 应用星级属性：applyEntityAttributes 设 1 星基准后，按外部表费用/星级放大随倍率属性。 */
+    private void applyChessStarIfNeeded() {
+        var entry = net.minecraft.client.yiz.tool.chess.ChessUnitTable.get(this);
+        if (entry == null) return;
+        net.minecraft.client.yiz.tool.chess.ChessUnitTable.applyStar(this, entry);
+        this.syncChessToClient();
+    }
+
     /** 定义混淆血量存储：SECURE_OBF（哨兵 enc(-1,随机key)，首个服务端 tick 经 registerSecureHealth 设满血）+ SECURE_OBF_KEY（随机）。 */
     @Override
     protected void defineSynchedData() {
@@ -887,6 +949,11 @@ public abstract class YizxianMob extends Mob implements PoshiBearer {
             this.entityData.define(net.minecraft.client.yiz.tool.health.HealthChannels.getSecureObf(),
                 net.minecraft.client.yiz.tool.health.FloatObf.enc(-1.0F, key));
             this.entityData.define(net.minecraft.client.yiz.tool.health.HealthChannels.getSecureObfKey(), key);
+        }
+        // 自走棋棋子星级镜像（客户端描边/体型渲染读；DATA_CHESS_COST>0 才算棋子）
+        if (!this.entityData.hasItem(DATA_CHESS_STAR)) {
+            this.entityData.define(DATA_CHESS_STAR, 1);
+            this.entityData.define(DATA_CHESS_COST, 0);
         }
     }
 
@@ -991,6 +1058,8 @@ public abstract class YizxianMob extends Mob implements PoshiBearer {
         } catch (Throwable ignored) {}
         // 每实例效果态持久化（归属玩家 + 显式开关覆盖）
         net.minecraft.client.yiz.tool.effect.InstanceEffectState.writeState(this, tag);
+        // 自走棋棋子态持久化（费用/星级/1星基准）
+        net.minecraft.client.yiz.tool.chess.ChessUnitTable.writeState(this, tag);
     }
 
     /** 恢复混淆血量串 + key。 */
@@ -1013,6 +1082,9 @@ public abstract class YizxianMob extends Mob implements PoshiBearer {
         } catch (Throwable ignored) {}
         // 恢复每实例效果态（归属玩家 + 显式开关覆盖）
         net.minecraft.client.yiz.tool.effect.InstanceEffectState.readState(this, tag);
+        // 恢复自走棋棋子态（费用/星级/1星基准）并回填 DataParameter 镜像
+        net.minecraft.client.yiz.tool.chess.ChessUnitTable.readState(this, tag);
+        this.syncChessToClient();
     }
 
     /** 调用栈是否含 vanilla Entity.load（读存档必经帧）——用于拒绝外部 mod 直接调 readAdditionalSaveData 篡改血量。 */
@@ -1370,6 +1442,12 @@ public abstract class YizxianMob extends Mob implements PoshiBearer {
             //  独立权威上限 = 模板值 × 难度乘数。不能读属性自身当保护值（SecureHealthClosure.getMaxHealth
             // 读的就是该属性 → 比较自己跟自己恒 false，空转）；用 templateMaxHealth 才是「未被篡改」的基准。
             double authoritativeMax = this.templateMaxHealth * difficultyMultiplier();
+            // 自走棋棋子：权威最大生命 = 1 星基准 × 升星倍率（防星级值被本逻辑每 tick 覆盖回 1 星基准）
+            var chessEntry = net.minecraft.client.yiz.tool.chess.ChessUnitTable.get(this);
+            if (chessEntry != null && chessEntry.baseHealth >= 0) {
+                authoritativeMax = chessEntry.baseHealth
+                    * net.minecraft.client.yiz.tool.chess.ChessUnitTable.multiplier(chessEntry.cost, chessEntry.star);
+            }
             if (hpInst != null && authoritativeMax > 0
                     && Math.abs(hpInst.getValue() - authoritativeMax) > 0.001) {
                 hpInst.setBaseValue(authoritativeMax);

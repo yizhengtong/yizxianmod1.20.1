@@ -118,6 +118,9 @@ public class TaxutiEntity extends YizxianMob implements GeoEntity {
 
     // ---- 属性 ----
 
+    @Override
+    protected double yizxianMaxHealthTemplate() { return 410.0; }
+
     public static AttributeSupplier.Builder createAttributes() {
         AttributeSupplier.Builder builder = Monster.createMonsterAttributes()
             .add(Attributes.MAX_HEALTH, 410.0)

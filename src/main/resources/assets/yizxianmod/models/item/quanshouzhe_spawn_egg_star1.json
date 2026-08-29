@@ -1,0 +1,4 @@
+{
+  "parent": "minecraft:item/generated",
+  "textures": { "layer0": "yizxianmod:item/quanshouzhe_spawn_egg" }
+}

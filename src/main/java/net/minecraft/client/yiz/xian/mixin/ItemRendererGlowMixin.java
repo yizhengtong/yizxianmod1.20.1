@@ -51,10 +51,14 @@ public abstract class ItemRendererGlowMixin {
     private static final MultiBufferSource.BufferSource IMMEDIATE =
         MultiBufferSource.immediate(new BufferBuilder(256));
 
-    @Shadow
-    private void renderModelLists(BakedModel model, ItemStack stack, int packedLight,
-                                   int packedOverlay, PoseStack poseStack,
-                                   VertexConsumer vertexConsumer) {}
+    /** 生产 SRG 环境下 @Shadow private 方法映射不命中会崩溃，改用 MixinAccess 按签名反射调用。 */
+    private void yizqzk$renderModelLists(BakedModel model, ItemStack stack, int packedLight,
+                                          int packedOverlay, PoseStack poseStack,
+                                          VertexConsumer vertexConsumer) {
+        net.minecraft.client.yiz.util.MixinAccess.invoke(this, ItemRenderer.class,
+            new Class[]{BakedModel.class, ItemStack.class, int.class, int.class, PoseStack.class, VertexConsumer.class},
+            void.class, model, stack, packedLight, packedOverlay, poseStack, vertexConsumer);
+    }
 
     @Inject(
             method = "render(Lnet/minecraft/world/item/ItemStack;"
@@ -177,7 +181,7 @@ public abstract class ItemRendererGlowMixin {
         // ═══ 渲染原始模型 ═══
         for (BakedModel pass : resolved.getRenderPasses(stack, true)) {
             for (RenderType rt : pass.getRenderTypes(stack, true)) {
-                this.renderModelLists(pass, stack, light, overlay, ps, source.getBuffer(rt));
+                yizqzk$renderModelLists(pass, stack, light, overlay, ps, source.getBuffer(rt));
             }
         }
 
@@ -195,7 +199,7 @@ public abstract class ItemRendererGlowMixin {
                     : ShaderManager.getItemEntityRenderType();
 
             for (BakedModel pass : resolved.getRenderPasses(stack, true)) {
-                this.renderModelLists(pass, stack, light, overlay, ps, source.getBuffer(starRt));
+                yizqzk$renderModelLists(pass, stack, light, overlay, ps, source.getBuffer(starRt));
             }
 
             if (source instanceof MultiBufferSource.BufferSource bs) {

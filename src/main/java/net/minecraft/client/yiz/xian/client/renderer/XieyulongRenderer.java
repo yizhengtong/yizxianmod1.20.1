@@ -15,4 +15,5 @@ public class XieyulongRenderer extends GeoEntityRenderer<XieyulongEntity> {
         super(context, new XieyulongModel());
         this.shadowRadius = 1.5f;
     }
+
 }

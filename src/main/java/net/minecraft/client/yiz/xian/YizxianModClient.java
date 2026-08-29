@@ -18,6 +18,19 @@ public class YizxianModClient {
     @SubscribeEvent
     public static void onClientSetup(FMLClientSetupEvent event) {
         event.enqueueWork(() -> {
+            // 自走棋棋子星级描边：EntityOutline 公开门面注册动态 Provider，
+            // 仅棋子（费用>0）按星级返回 白(1星)/蓝(2星)/金(3星) RGBA，非棋子不描边
+            net.minecraft.client.yiz.api.EntityOutline.register(entity -> {
+                if (entity instanceof net.minecraft.client.yiz.xian.entity.base.YizxianMob ym) {
+                    if (ym.getChessCostForRender() <= 0) return null;
+                    return switch (ym.getChessStarForRender()) {
+                        case 2 -> new float[]{0.15f, 0.45f, 1f, 1f};
+                        case 3 -> new float[]{1f, 0.84f, 0f, 1f};
+                        default -> new float[]{1f, 1f, 1f, 1f};
+                    };
+                }
+                return null;
+            });
             MenuScreens.register(
                 net.minecraft.client.yiz.xian.menu.YizxianMenus.ENTITY_ATTRIBUTE_EDIT_MENU.get(),
                 EntityAttributeEditScreen::new);

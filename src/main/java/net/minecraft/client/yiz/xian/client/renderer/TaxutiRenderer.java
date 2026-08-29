@@ -17,4 +17,5 @@ public class TaxutiRenderer extends GeoEntityRenderer<TaxutiEntity> {
         this.shadowRadius = 1.5f;
         this.addRenderLayer(new TaxutiShadowLayer(this));
     }
+
 }

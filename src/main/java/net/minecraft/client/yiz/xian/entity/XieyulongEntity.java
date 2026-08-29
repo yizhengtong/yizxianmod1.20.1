@@ -369,6 +369,9 @@ public class XieyulongEntity extends YizxianMob implements GeoEntity {
 
     // ---- 属性 ----
 
+    @Override
+    protected double yizxianMaxHealthTemplate() { return 525.0; }
+
     public static AttributeSupplier.Builder createAttributes() {
         AttributeSupplier.Builder builder = Monster.createMonsterAttributes()
             .add(Attributes.MAX_HEALTH, 525.0)

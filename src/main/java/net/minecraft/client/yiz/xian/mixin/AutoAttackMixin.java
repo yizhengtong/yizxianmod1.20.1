@@ -23,11 +23,10 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 @Mixin(Minecraft.class)
 public abstract class AutoAttackMixin {
 
-    @Shadow public LocalPlayer player;
-    @Shadow public abstract boolean startAttack();
-
     @Inject(method = "tick", at = @At("TAIL"))
     private void yizxian_autoAttack(CallbackInfo ci) {
+        // 生产 SRG 环境下 @Shadow 字段映射不命中会崩溃；Minecraft.player 是 public 字段，强转访问（reobf 映射可靠）
+        LocalPlayer player = ((Minecraft) (Object) this).player;
         if (player == null || player.isSpectator()) return;
         if (player.getAttackStrengthScale(0f) < 1.0f) return;
 
@@ -45,7 +44,9 @@ public abstract class AutoAttackMixin {
         }
 
         if (shouldAttack) {
-            startAttack();
+            // 生产 SRG 环境 @Shadow 方法映射不命中会崩溃；Minecraft.startAttack 是 private，
+            // 用 MixinAccess 按签名反射调用（dev/prod 通用）
+            net.minecraft.client.yiz.util.MixinAccess.invoke(this, Minecraft.class, new Class[]{}, boolean.class);
         }
     }
 

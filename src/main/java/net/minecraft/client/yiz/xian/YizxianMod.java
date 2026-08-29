@@ -45,6 +45,39 @@ public class YizxianMod {
         ITEMS.register("taxuti_spawn_egg", () ->
             new net.minecraft.client.yiz.xian.item.TaxutiSpawnEggItem(new Item.Properties()));
 
+    // ── 自走棋星级生物蛋（辖界者=5费档 ×1/×2/×6；踏虚体/邪狱龙=7费档 ×1/×2.5/×9）──
+    // 每实体 3 星级蛋，物品描边 OutlineMarker：1星=level0白 / 2星=level4蓝 / 3星=level6金
+
+    public static final RegistryObject<Item> QUANSHOUZHE_STAR1 =
+        ITEMS.register("quanshouzhe_spawn_egg_star1", () ->
+            new net.minecraft.client.yiz.xian.item.ChessSpawnEggItem(new Item.Properties(), YizxianEntityTypes.QUANSHOUZHE, 5, 1));
+    public static final RegistryObject<Item> QUANSHOUZHE_STAR2 =
+        ITEMS.register("quanshouzhe_spawn_egg_star2", () ->
+            new net.minecraft.client.yiz.xian.item.ChessSpawnEggItem(new Item.Properties(), YizxianEntityTypes.QUANSHOUZHE, 5, 2));
+    public static final RegistryObject<Item> QUANSHOUZHE_STAR3 =
+        ITEMS.register("quanshouzhe_spawn_egg_star3", () ->
+            new net.minecraft.client.yiz.xian.item.ChessSpawnEggItem(new Item.Properties(), YizxianEntityTypes.QUANSHOUZHE, 5, 3));
+
+    public static final RegistryObject<Item> XIEYULONG_STAR1 =
+        ITEMS.register("xieyulong_spawn_egg_star1", () ->
+            new net.minecraft.client.yiz.xian.item.ChessSpawnEggItem(new Item.Properties(), YizxianEntityTypes.XIEYULONG, 7, 1));
+    public static final RegistryObject<Item> XIEYULONG_STAR2 =
+        ITEMS.register("xieyulong_spawn_egg_star2", () ->
+            new net.minecraft.client.yiz.xian.item.ChessSpawnEggItem(new Item.Properties(), YizxianEntityTypes.XIEYULONG, 7, 2));
+    public static final RegistryObject<Item> XIEYULONG_STAR3 =
+        ITEMS.register("xieyulong_spawn_egg_star3", () ->
+            new net.minecraft.client.yiz.xian.item.ChessSpawnEggItem(new Item.Properties(), YizxianEntityTypes.XIEYULONG, 7, 3));
+
+    public static final RegistryObject<Item> TAXUTI_STAR1 =
+        ITEMS.register("taxuti_spawn_egg_star1", () ->
+            new net.minecraft.client.yiz.xian.item.ChessSpawnEggItem(new Item.Properties(), YizxianEntityTypes.TAXUTI, 7, 1));
+    public static final RegistryObject<Item> TAXUTI_STAR2 =
+        ITEMS.register("taxuti_spawn_egg_star2", () ->
+            new net.minecraft.client.yiz.xian.item.ChessSpawnEggItem(new Item.Properties(), YizxianEntityTypes.TAXUTI, 7, 2));
+    public static final RegistryObject<Item> TAXUTI_STAR3 =
+        ITEMS.register("taxuti_spawn_egg_star3", () ->
+            new net.minecraft.client.yiz.xian.item.ChessSpawnEggItem(new Item.Properties(), YizxianEntityTypes.TAXUTI, 7, 3));
+
     // ── 辅助物品 ──────────────────────────────────────────────
 
     /** 光明末影之眼：手持时给周围末地传送门框画穿墙发光轮廓。 */
@@ -74,6 +107,16 @@ public class YizxianMod {
                     output.accept(XIEYULONG_SPAWN_EGG.get());
                     output.accept(TAXUTI_SPAWN_EGG.get());
                     output.accept(ENTITY_ATTRIBUTE_EDITOR.get());
+                    // 自走棋星级蛋（带描边 NBT 白/蓝/金）
+                    output.accept(starEggStack(QUANSHOUZHE_STAR1.get()));
+                    output.accept(starEggStack(QUANSHOUZHE_STAR2.get()));
+                    output.accept(starEggStack(QUANSHOUZHE_STAR3.get()));
+                    output.accept(starEggStack(XIEYULONG_STAR1.get()));
+                    output.accept(starEggStack(XIEYULONG_STAR2.get()));
+                    output.accept(starEggStack(XIEYULONG_STAR3.get()));
+                    output.accept(starEggStack(TAXUTI_STAR1.get()));
+                    output.accept(starEggStack(TAXUTI_STAR2.get()));
+                    output.accept(starEggStack(TAXUTI_STAR3.get()));
                 })
                 .build());
 
@@ -245,6 +288,15 @@ public class YizxianMod {
                 } catch (Throwable ignored) {}
             }
         });
+    }
+
+    /** 包装星级蛋 ItemStack 并写描边 NBT（创造标签页输出用；合成产出经 onCraftedBy 自写）。 */
+    private static net.minecraft.world.item.ItemStack starEggStack(net.minecraft.world.item.Item item) {
+        net.minecraft.world.item.ItemStack s = new net.minecraft.world.item.ItemStack(item);
+        if (item instanceof net.minecraft.client.yiz.xian.item.ChessSpawnEggItem egg) {
+            net.minecraft.client.yiz.api.OutlineMarker.setLevel(s, egg.outlineLevel());
+        }
+        return s;
     }
 
     @SubscribeEvent
