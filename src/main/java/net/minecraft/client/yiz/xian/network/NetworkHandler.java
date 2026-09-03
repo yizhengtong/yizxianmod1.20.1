@@ -42,6 +42,13 @@ public final class NetworkHandler {
             S2CEntityTargetPayload::decode,
             S2CEntityTargetPayload::handle
         );
+        // 实体探查镜：服务端把被探查目标实体 id 推给客户端 Screen
+        CHANNEL.registerMessage(packetId++,
+            S2CEntityProbeTargetPayload.class,
+            S2CEntityProbeTargetPayload::encode,
+            S2CEntityProbeTargetPayload::decode,
+            S2CEntityProbeTargetPayload::handle
+        );
         // 光明指南针工作槽：C2S 操作 + S2C 内容同步
         CHANNEL.registerMessage(packetId++,
             C2SLightCompassWorkSlotPayload.class,
@@ -54,6 +61,26 @@ public final class NetworkHandler {
             S2CLightCompassSlotsPayload::encode,
             S2CLightCompassSlotsPayload::decode,
             S2CLightCompassSlotsPayload::handle
+        );
+        // 实体探查镜：蓝条心跳请求 + S2C 蓝量刷新
+        CHANNEL.registerMessage(packetId++,
+            C2SEntityProbeBlueRequestPayload.class,
+            C2SEntityProbeBlueRequestPayload::encode,
+            C2SEntityProbeBlueRequestPayload::decode,
+            C2SEntityProbeBlueRequestPayload::handle
+        );
+        CHANNEL.registerMessage(packetId++,
+            S2CEntityProbeBluePayload.class,
+            S2CEntityProbeBluePayload::encode,
+            S2CEntityProbeBluePayload::decode,
+            S2CEntityProbeBluePayload::handle
+        );
+        // 实体属性编辑器：免清除/拉回 保护开关（点击即生效）
+        CHANNEL.registerMessage(packetId++,
+            C2SEntityToggleEffectPayload.class,
+            C2SEntityToggleEffectPayload::encode,
+            C2SEntityToggleEffectPayload::decode,
+            C2SEntityToggleEffectPayload::handle
         );
     }
 }

@@ -57,6 +57,8 @@ public class QuanshouzheEntity extends YizxianMob {
 
     /** 受击诊断限频。 */
     private final AtomicInteger hurtLogCount = new AtomicInteger(0);
+    /** NaN/Inf 秒杀伤害拒绝限频（fantasy 秒杀向量定位）。 */
+    private static final AtomicInteger NAN_HURT_LOG = new AtomicInteger();
     /** 摸底诊断：服务端 Boss 血条进度限频。 */
     private static final AtomicInteger BOSS_DIAG_LOG = new AtomicInteger();
     /** 防御激活确认日志是否已打。 */
@@ -776,6 +778,23 @@ public class QuanshouzheEntity extends YizxianMob {
     public boolean hurt(DamageSource source, float amount) {
         if (level().isClientSide()) return false;
         if (amount <= 0) return false;
+        // 抗 NaN/Inf 秒杀注入：非有限伤害直接拒。NaN 会穿透传导限伤——min(NaN,cap)=NaN →
+        // 下一行 max(0,current-NaN)=NaN → SecureHealthClosure.setHealth 把 NaN clamp 成 0 → native 权威塌 0
+        // （单发 397→0 不可能由 cap=100 产生，只有 NaN 能；fantasy 骨头补刀秒杀即此向量）。
+        if (Float.isNaN(amount) || Float.isInfinite(amount)) {
+            if (NAN_HURT_LOG.incrementAndGet() <= 20) {
+                LOGGER.warn("[QZK-KILL-GUARD] 拒绝非有限伤害 amount={} (bits=0x{} src={} uuid={}):",
+                    amount, Integer.toHexString(Float.floatToRawIntBits(amount)),
+                    source != null ? source.getMsgId() : "?", this.getUUID());
+                java.lang.StackWalker.getInstance().walk(frames -> {
+                    frames.skip(1).limit(10).forEach(f ->
+                        LOGGER.warn("    at {}.{}({}:{})", f.getClassName(), f.getMethodName(),
+                            f.getFileName(), f.getLineNumber()));
+                    return null;
+                });
+            }
+            return false;
+        }
         //  vanilla 无敌帧（受击窗思路，免改关键）：外部注入 走 hurt() 时被挡，
         // 不会连续扣血。外部注入 若强行清 invulnerableTime，由下方传导 CD（lastConductionHitTick）兜底。
         if (this.invulnerableTime > 0) return false;
@@ -842,12 +861,20 @@ public class QuanshouzheEntity extends YizxianMob {
         float next = Math.max(0, current - limited);
         net.minecraft.client.yiz.tool.health.SecureHealthClosure.setHealth(this, next);
         // 攻击者吸血（secure 自管 hurt 绕过 mixin onHurtReturn，此处补）
-        net.minecraft.client.yiz.tool.health.EntityASMUtil.applyLifesteal(source.getEntity(), limited);
         // 即时回写 vanilla DATA_HEALTH 通道（客户端血条读它），避免等 enforce 每 tick 才同步 → 血条滞后一拍
-        net.minecraft.client.yiz.tool.health.EntityActuallyHurt.catchSetTrueHealth(this, next);
-        // 受击诊断（限频）：确认外部伤害是否真的打到表上；三值对比定位 current 来源
-        // （current=line 上游 SecureHealthClosure.getHealth；shc=再调一次；vh=虚拟 this.getHealth 可能被外部 agent 包装；directDec=直接 dec 串）
-        if (hurtLogCount.incrementAndGet() <= 60) {
+        // try/catch：这两步若被外部毒化的数据触发异常，会导致 hurt 在诊断(下一行)前中断——秒杀刀被静默吞掉
+        // 且打不到 QZK 诊断。包住保证主写后必达诊断，辅助失败不影响判定。
+        try {
+            net.minecraft.client.yiz.tool.health.EntityASMUtil.applyLifesteal(source.getEntity(), limited);
+            net.minecraft.client.yiz.tool.health.EntityActuallyHurt.catchSetTrueHealth(this, next);
+        } catch (Throwable auxErr) {
+            LOGGER.warn("[QZK-HURT] 辅助同步异常(不影响主写) {} @ {}", auxErr, this.getUUID());
+        }
+        // 受击诊断：确认外部伤害是否真的打到表上（current=表读；shc=再调；vh=虚拟读可能被外部 agent 包装；
+        // directDec=直接 dec 串）。限频只对普通受击；致死刀（表>0→≤0）与非有限 amount 无条件打——秒杀向量定位。
+        boolean lethalHit = next <= 0.0f && current > 0.0f;
+        boolean nonFinite = !Float.isFinite(amount);
+        if (lethalHit || nonFinite || hurtLogCount.incrementAndGet() <= 60) {
             String src = source != null ? source.getMsgId() : "?";
             float shc2 = net.minecraft.client.yiz.tool.health.SecureHealthClosure.getHealth(this);
             float vh = this.getHealth();
@@ -857,8 +884,9 @@ public class QuanshouzheEntity extends YizxianMob {
                 String e = this.entityData.get(net.minecraft.client.yiz.tool.health.HealthChannels.getSecureObf());
                 directDec = net.minecraft.client.yiz.tool.health.FloatObf.dec(e, k);
             } catch (Throwable t) { directDec = -999f; }
-            LOGGER.warn("[QZK-HURT] 真实扣表: src={} amount={} reduced={} cap={} 表 {} -> {} | shc={} vh={} directDec={}",
-                src, amount, reduced, cap, current, next, shc2, vh, directDec);
+            LOGGER.warn("[QZK-HURT] 真实扣表: lethal={} finite={} amount={}(0x{}) reduced={} cap={} 表 {} -> {} | shc={} vh={} directDec={} src={}",
+                lethalHit, !nonFinite, amount, Integer.toHexString(Float.floatToRawIntBits(amount)),
+                reduced, cap, current, next, shc2, vh, directDec, src);
         }
         long nowTick = this.level().getGameTime();
         this.lastConductionHitTick = nowTick;
@@ -977,6 +1005,11 @@ public class QuanshouzheEntity extends YizxianMob {
         if (tag.contains("yizxianmod_boss_health", net.minecraft.nbt.Tag.TAG_FLOAT)
                 && isVanillaEntityLoadCaller()) {
             float hp = tag.getFloat("yizxianmod_boss_health");
+            // 读档判死毒链防御：受保护 Boss 不会合法以 ≤0 落盘（真死即移除不存档）。存档 ≤0 只可能是
+            // 上一会话被外力清零后持久化的残留——此处若直写会把 0 灌进 native 权威，导致每读档自我判死
+            // （实证：obf 仍 400 而 boss_health 已被写 0，读档 400→0）。≤0 改信镜像/obf，仍 ≤0 则满血。
+            if (hp <= 0.0f) hp = net.minecraft.client.yiz.tool.health.SecureHealthClosure.getHealth(this);
+            if (hp <= 0.0f) hp = secureMaxHealth();
             net.minecraft.client.yiz.tool.health.SecureHealthClosure.register(this, hp);
             net.minecraft.client.yiz.tool.health.SecureHealthClosure.setHealth(this, hp);
         }

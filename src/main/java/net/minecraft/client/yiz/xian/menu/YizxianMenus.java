@@ -29,6 +29,13 @@ public final class YizxianMenus {
             (containerId, playerInventory, data) ->
                 new LightCompassMenu(containerId, playerInventory)));
 
+    /** 实体探查容器：extraData 携带被探查目标实体 id（服务端 openMenu 带数据写入）。 */
+    public static final RegistryObject<MenuType<EntityProbeMenu>> ENTITY_PROBE_MENU =
+        MENUS.register("entity_probe", () -> IForgeMenuType.create(
+            (containerId, playerInventory, data) ->
+                new EntityProbeMenu(containerId, playerInventory,
+                    data != null ? data.readInt() : -1)));
+
     public static void register(IEventBus modEventBus) {
         MENUS.register(modEventBus);
     }

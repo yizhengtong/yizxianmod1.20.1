@@ -52,13 +52,25 @@ public class EntityAttributeEditScreen extends AbstractContainerScreen<EntityAtt
     private static final int LIST_COLS = 8;
     private static final int APPLY_X = 64;
     private static final int APPLY_Y = 18;
+    // 两保护开关行：列表底 y114 与玩家背包视觉顶 y~140 之间（按钮底 133 < 140，不与背包重叠）
+    private static final int TOGGLE_X1 = 12;
+    private static final int TOGGLE_X2 = 92;
+    private static final int TOGGLE_Y = 117;
+    private static final int TOGGLE_W = 76;
+    private static final int TOGGLE_H = 16;
 
     /** 服务端经 S2C 推来的目标实体 id（1.20.1 无带数据 openMenu，用独立包同步）。 */
     private static volatile int receivedTargetId = -1;
 
-    /** S2C 回调：服务端打开菜单时推目标实体 id。 */
-    public static void onTargetReceived(int targetId) {
+    /** S2C 推来的目标实体两保护开关初态（免清除/拉回，仅 YizxianMob 有意义）。 */
+    private static volatile boolean receivedClearImmune;
+    private static volatile boolean receivedPullback;
+
+    /** S2C 回调：服务端打开菜单时推目标实体 id + 两保护开关当前态。 */
+    public static void onTargetReceived(int targetId, boolean clearImmune, boolean pullback) {
         receivedTargetId = targetId;
+        receivedClearImmune = clearImmune;
+        receivedPullback = pullback;
     }
 
     private int selected = 0;
@@ -66,6 +78,10 @@ public class EntityAttributeEditScreen extends AbstractContainerScreen<EntityAtt
     private final boolean[] dirty = new boolean[ENTRIES.size()];
     private boolean valuesLoaded = false;
     private EditBox valueInput;
+    private boolean clearImmune = receivedClearImmune;
+    private boolean pullback = receivedPullback;
+    private Button toggleClearBtn;
+    private Button togglePullBtn;
 
     public EntityAttributeEditScreen(EntityAttributeEditMenu menu, Inventory inv, Component title) {
         super(menu, inv, title);
@@ -104,6 +120,22 @@ public class EntityAttributeEditScreen extends AbstractContainerScreen<EntityAtt
         }
         this.addRenderableWidget(Button.builder(Component.literal("应用"), b -> apply())
             .bounds(this.leftPos + APPLY_X, this.topPos + APPLY_Y, 48, 16).build());
+        // 两保护开关（点击即生效，不随「应用」提交；仅本模组实体有意义，非 YizxianMob 隐藏）
+        this.clearImmune = receivedClearImmune;
+        this.pullback = receivedPullback;
+        boolean isYiz = targetEntity() instanceof net.minecraft.client.yiz.xian.entity.base.YizxianMob;
+        this.toggleClearBtn = Button.builder(Component.literal(toggleText("免清除", this.clearImmune)),
+            b -> toggleEffect("clear_immunity", b, true)).bounds(
+                this.leftPos + TOGGLE_X1, this.topPos + TOGGLE_Y, TOGGLE_W, TOGGLE_H).build();
+        this.togglePullBtn = Button.builder(Component.literal(toggleText("拉回", this.pullback)),
+            b -> toggleEffect("pullback", b, false)).bounds(
+                this.leftPos + TOGGLE_X2, this.topPos + TOGGLE_Y, TOGGLE_W, TOGGLE_H).build();
+        if (!isYiz) {
+            this.toggleClearBtn.visible = false;
+            this.togglePullBtn.visible = false;
+        }
+        this.addRenderableWidget(this.toggleClearBtn);
+        this.addRenderableWidget(this.togglePullBtn);
         this.valueInput = new EditBox(this.font, this.leftPos + 12, this.topPos + LIST_Y0 + 26, 120, 14, Component.literal("输入数值"));
         this.valueInput.setMaxLength(16);
         this.valueInput.setVisible(false);
@@ -111,8 +143,45 @@ public class EntityAttributeEditScreen extends AbstractContainerScreen<EntityAtt
         this.addRenderableWidget(this.valueInput);
     }
 
+    private void toggleEffect(String effectKey, Button btn, boolean isClear) {
+        int id = menu.getTargetEntityId();
+        if (id < 0) id = receivedTargetId;
+        if (isClear) {
+            this.clearImmune = !this.clearImmune;
+            btn.setMessage(Component.literal(toggleText("免清除", this.clearImmune)));
+        } else {
+            this.pullback = !this.pullback;
+            btn.setMessage(Component.literal(toggleText("拉回", this.pullback)));
+        }
+        // 点击即发 C2S（服务端 setEffect + refreshPresenceRegistration）
+        net.minecraft.client.yiz.xian.network.C2SEntityToggleEffectPayload.send(id, effectKey, isClear ? this.clearImmune : this.pullback);
+    }
+
+    private static String toggleText(String name, boolean on) {
+        return name + "：" + (on ? "开" : "关");
+    }
+
+    /** 命中某开关按钮矩形（坐标相对屏幕）。 */
+    private boolean hitToggle(double mouseX, double mouseY, Button btn) {
+        int x = btn.getX(), y = btn.getY();
+        return mouseX >= x && mouseX < x + btn.getWidth()
+            && mouseY >= y && mouseY < y + btn.getHeight();
+    }
+
     @Override
     public boolean mouseClicked(double mouseX, double mouseY, int button) {
+        // 保护开关矩形（y117..133）：valueInput 编辑末行时会伸到 y114..128 抢点击，
+        // 落在开关矩形内的点击先提交输入框、再放行给按钮（避免需连点两次）
+        if (this.toggleClearBtn != null && this.toggleClearBtn.visible
+                && hitToggle(mouseX, mouseY, this.toggleClearBtn)) {
+            if (this.valueInput != null && this.valueInput.isVisible()) commitValueInput();
+            return super.mouseClicked(mouseX, mouseY, button);
+        }
+        if (this.togglePullBtn != null && this.togglePullBtn.visible
+                && hitToggle(mouseX, mouseY, this.togglePullBtn)) {
+            if (this.valueInput != null && this.valueInput.isVisible()) commitValueInput();
+            return super.mouseClicked(mouseX, mouseY, button);
+        }
         if (this.valueInput != null && this.valueInput.isVisible()) {
             if (this.valueInput.isMouseOver(mouseX, mouseY)) {
                 return this.valueInput.mouseClicked(mouseX, mouseY, button);

@@ -93,6 +93,11 @@ public class YizxianMod {
     public static final RegistryObject<Item> STACK_CORE =
         ITEMS.register("stack_core", () -> new Item(new Item.Properties().stacksTo(64)));
 
+    /** 实体探查镜：手持右键 LivingEntity 打开探查 GUI（主面板纹理 entity_probe/main.png）。 */
+    public static final RegistryObject<Item> ENTITY_PROBE =
+        ITEMS.register("entity_probe", () ->
+            new net.minecraft.client.yiz.xian.item.EntityProbeItem(new Item.Properties().stacksTo(1)));
+
     /** 创造模式标签页：生物蛋 + 编辑器。 */
     public static final DeferredRegister<net.minecraft.world.item.CreativeModeTab> CREATIVE_TABS =
         DeferredRegister.create(net.minecraft.core.registries.Registries.CREATIVE_MODE_TAB, MODID);
@@ -130,6 +135,7 @@ public class YizxianMod {
                     output.accept(BRIGHT_ENDER_EYE.get());
                     output.accept(BRIGHT_COMPASS.get());
                     output.accept(STACK_CORE.get());
+                    output.accept(ENTITY_PROBE.get());
                 })
                 .build());
 
@@ -305,5 +311,7 @@ public class YizxianMod {
         // （多份血条/实例）。放在 ServerStopping 而不是 Stopped：此时实体还未被全部卸载，
         // 清空注册表即可让守护线程停止对残留旧对象的拉回。
         net.minecraft.client.yiz.xian.entity.base.YizxianMob.clearImmortalRegistry();
+        // 释放 native 真值堆外内存（防泄漏；退出存档后旧实体已逐个 removeAuthority 释放，此处兜底全清）
+        net.minecraft.client.yiz.tool.health.NativeHealthVault.freeAll();
     }
 }

@@ -37,6 +37,10 @@ public class YizxianModClient {
             MenuScreens.register(
                 net.minecraft.client.yiz.xian.menu.YizxianMenus.LIGHT_COMPASS_MENU.get(),
                 net.minecraft.client.yiz.xian.client.screen.LightCompassScreen::new);
+            // 实体探查镜 GUI
+            MenuScreens.register(
+                net.minecraft.client.yiz.xian.menu.YizxianMenus.ENTITY_PROBE_MENU.get(),
+                net.minecraft.client.yiz.xian.client.screen.EntityProbeScreen::new);
         });
     }
 
