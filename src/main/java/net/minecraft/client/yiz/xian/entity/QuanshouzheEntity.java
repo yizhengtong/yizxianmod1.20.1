@@ -1,6 +1,10 @@
 package net.minecraft.client.yiz.xian.entity;
 
 import net.minecraft.client.yiz.attribute.YizAttributes;
+import net.minecraft.client.yiz.creature.CombatSpec;
+import net.minecraft.client.yiz.creature.CreatureProfileRegistry;
+import net.minecraft.client.yiz.creature.PhaseSpec;
+import net.minecraft.client.yiz.creature.PhaseTrigger;
 import net.minecraft.client.yiz.editor.PoshiBypassBridge;
 import net.minecraft.client.yiz.tool.attribute.EntityAttributeGate;
 import net.minecraft.client.yiz.xian.YizxianMod;
@@ -187,6 +191,9 @@ public class QuanshouzheEntity extends YizxianMob {
         setAttr(YizAttributes.MANA_REGEN, "mana_regen", 20.0);
         // 基础回血属性化（每 tick 0.05；阶段2 加速 0.08 在 aiStep 跟随阶段切换 LIFE_REGEN_RATE）
         setAttr(YizAttributes.LIFE_REGEN_RATE, "life_regen_rate", 1.0);
+        // 形态属性（攻击/攻强/吸血/限伤）统一由形态表驱动，默认形态 1；
+        // 放在最后是为了让数据包/原型能覆盖形态 1 的数值（否则这里硬编码会盖掉配置）
+        applyFormPhase(this.entityData.get(formPhase()));
         // 血量外部表注册已下沉到基类 YizxianMob.registerSecureHealth()（applyEntityAttributes 后自动执行）
     }
 
@@ -203,28 +210,90 @@ public class QuanshouzheEntity extends YizxianMob {
 
     /** 形态2 → 形态1 回退缓冲起点 tick（-1=无缓冲）。 */
     private int phaseRegressBufferTick = -1;
+    /** 当前形态进入时的 tickCount（供 TICKS_IN_PHASE_ABOVE 类触发条件计算）。 */
+    private int phaseEnterTick = -1;
 
-    /** 三阶段形态属性应用（阶段变化时调用一次）：攻击/攻击强度/吸血按阶段值×难度缩放。
-     *  阶段1: 50攻/60攻强/10%吸血  阶段2: 55攻/70攻强/15%吸血  阶段3: 60攻/80攻强/18%吸血。
-     *  涨跌多空(20/30/40%)与每tick回血(0.05/0.06/0.07)在 aiStep 每 tick 跟随阶段，不在此应用。 */
+    /** 内置默认形态表（代码轨缺省）：与既有硬编码逐一对应，未注册原型时零行为变化。 */
+    private static final List<PhaseSpec> DEFAULT_PHASES = List.of(
+        PhaseSpec.builder(1)
+            .attr("yizmodqzk", "attack_strength", 60.0)
+            .attr("yizmodqzk", "life_steal", 10.0)
+            .attr("yizmodqzk", "conduction_cap", 25.0)
+            .attr("minecraft", "generic.attack_damage", 50.0)
+            .combat(CombatSpec.builder().attackInterval(15).attackRange(5.25).param("heavy_radius", 9.0).build())
+            .advance(PhaseTrigger.healthBelow(0.80, 0))
+            .build(),
+        PhaseSpec.builder(2)
+            .attr("yizmodqzk", "attack_strength", 80.0)
+            .attr("yizmodqzk", "life_steal", 20.0)
+            .attr("yizmodqzk", "conduction_cap", 15.0)
+            .attr("minecraft", "generic.attack_damage", 65.0)
+            .combat(CombatSpec.builder().attackInterval(7).attackRange(9.5).param("heavy_radius", 18.0).build())
+            .regress(PhaseTrigger.healthAbove(0.80, 60))
+            .build()
+    );
+
+    /** 形态表：组件优先（数据包/原型可覆盖），未配置回退内置默认。 */
+    private List<PhaseSpec> phases() {
+        List<PhaseSpec> list = CreatureProfileRegistry.phasesOf(this);
+        return list.isEmpty() ? DEFAULT_PHASES : list;
+    }
+
+    /** 取指定形态；不存在时回退首形态。 */
+    private PhaseSpec phaseSpec(int index) {
+        List<PhaseSpec> list = phases();
+        for (PhaseSpec p : list) {
+            if (p.safeIndex() == index) return p;
+        }
+        return list.get(0);
+    }
+
+    /** 下一形态序号；已是最后形态则返回自身。 */
+    private int nextPhase(int cur) {
+        List<PhaseSpec> list = phases();
+        for (int i = 0; i < list.size(); i++) {
+            if (list.get(i).safeIndex() == cur && i + 1 < list.size()) return list.get(i + 1).safeIndex();
+        }
+        return cur;
+    }
+
+    /** 上一形态序号；已是首形态则返回自身。 */
+    private int prevPhase(int cur) {
+        List<PhaseSpec> list = phases();
+        for (int i = 0; i < list.size(); i++) {
+            if (list.get(i).safeIndex() == cur && i > 0) return list.get(i - 1).safeIndex();
+        }
+        return cur;
+    }
+
+    /** 切换形态：同步 DataParameter + 记录进入 tick + 应用该形态属性。 */
+    private void switchPhase(int phase) {
+        this.entityData.set(formPhase(), phase);
+        this.phaseEnterTick = this.tickCount;
+        applyFormPhase(phase);
+    }
+
+    /** 三阶段形态属性应用（阶段变化时调用一次）：形态表给的属性按难度缩放后写入。
+     *  {\code minecraft:generic.attack_damage} 走 vanilla base；其余 yizmodqzk 属性走受保护写入。
+     *  涨跌多空与每tick回血在 aiStep 每 tick 跟随阶段，不在此应用。 */
     private void applyFormPhase(int phase) {
         if (this.level().isClientSide()) return;
         double mult = difficultyMultiplier();
-        float atk = switch (phase) { case 2 -> 65f; default -> 50f; };
-        double atkStr = switch (phase) { case 2 -> 80.0; default -> 60.0; };
-        double lifesteal = switch (phase) { case 2 -> 20.0; default -> 10.0; };
+        PhaseSpec spec = phaseSpec(phase);
+        boolean p2 = phase >= 2;
+        double atkBase = spec.attr("generic.attack_damage", p2 ? 65.0 : 50.0);
+        double atkStr = spec.attr("attack_strength", p2 ? 80.0 : 60.0);
+        double lifesteal = spec.attr("life_steal", p2 ? 20.0 : 10.0);
+        double cap = spec.attr("conduction_cap", p2 ? 15.0 : 25.0);
         // 攻击（vanilla base 动态改；applyVanillaDifficultyScale 只第一 tick 跑，阶段变化由这里接管）
         var atkInst = this.getAttribute(net.minecraft.world.entity.ai.attributes.Attributes.ATTACK_DAMAGE);
-        if (atkInst != null) atkInst.setBaseValue(atk * mult);
+        if (atkInst != null) atkInst.setBaseValue(atkBase * mult);
         // 受保护属性（setAttr 同步 AttributeStandardizer 标准值，防 20 tick 审计还原旧阶段值）
         setAttr(YizAttributes.ATTACK_STRENGTH, "attack_strength", atkStr * mult);
         setAttr(YizAttributes.LIFE_STEAL, "life_steal", lifesteal * mult);
-        // 传导限伤随形态：形态1=25%（基准 A）/ 形态2=A 的 60%（25%×0.6=15%，动态跟随基准，不硬编码 15）
-        double baseCap = 25.0;
-        double cap = switch (phase) { case 2 -> baseCap * 0.60; default -> baseCap; };
         setAttr(YizAttributes.CONDUCTION_CAP, "conduction_cap", cap);
         LOGGER.info("[QZK-PHASE] 辖界者进入阶段{}：攻击{} 攻强{}% 吸血{}% 限伤{}%",
-            phase, atk * mult, atkStr * mult, lifesteal * mult, cap);
+            phase, atkBase * mult, atkStr * mult, lifesteal * mult, cap);
     }
 
     @Override
@@ -525,44 +594,44 @@ public class QuanshouzheEntity extends YizxianMob {
         float maxHp = net.minecraft.client.yiz.tool.health.SecureHealthClosure.getMaxHealth(this);
         float ratio = maxHp > 0 ? hp / maxHp : 1.0F;
         int cur = this.entityData.get(formPhase());
-        if (ratio < 0.80F) {
+        PhaseSpec spec = phaseSpec(cur);
+        int ticksInPhase = this.phaseEnterTick >= 0 ? this.tickCount - this.phaseEnterTick : 0;
+        int combatTicks = this.combatStartTick >= 0 ? this.tickCount - this.combatStartTick : 0;
+
+        // 进入下一形态：条件由当前形态的 advance 声明（瞬时成立即切换）
+        if (spec.advance().isPresent()
+                && spec.advance().get().test(ratio, ticksInPhase, combatTicks)) {
             this.phaseRegressBufferTick = -1;
-            if (cur != 2) {
-                this.entityData.set(formPhase(), 2);
-                applyFormPhase(2);
-            }
-        } else if (cur == 2) {
-            if (this.phaseRegressBufferTick < 0) {
-                this.phaseRegressBufferTick = this.tickCount;
-            }
-            if (this.tickCount - this.phaseRegressBufferTick >= 60) {
-                this.entityData.set(formPhase(), 1);
+            int next = nextPhase(cur);
+            if (next != cur) switchPhase(next);
+        } else if (spec.regress().isPresent()) {
+            // 回退：条件由当前形态的 regress 声明，按 holdTicks 做持续缓冲（防阈值抖动来回跳）
+            PhaseTrigger trigger = spec.regress().get();
+            if (trigger.test(ratio, ticksInPhase, combatTicks)) {
+                if (this.phaseRegressBufferTick < 0) this.phaseRegressBufferTick = this.tickCount;
+                if (trigger.holdTicks() <= 0
+                        || this.tickCount - this.phaseRegressBufferTick >= trigger.holdTicks()) {
+                    this.phaseRegressBufferTick = -1;
+                    int prev = prevPhase(cur);
+                    if (prev != cur) switchPhase(prev);
+                }
+            } else {
                 this.phaseRegressBufferTick = -1;
-                applyFormPhase(1);
             }
         }
         return this.entityData.get(formPhase());
     }
 
     public int getAttackInterval() {
-        return switch (getFormPhase()) {
-            case 2 -> 7;
-            default -> 15;
-        };
+        return (int) phaseSpec(getFormPhase()).combat().intervalOr(getFormPhase() >= 2 ? 7 : 15);
     }
 
     public double getAttackRange() {
-        return switch (getFormPhase()) {
-            case 2 -> 9.5;
-            default -> 5.25;
-        };
+        return phaseSpec(getFormPhase()).combat().rangeOr(getFormPhase() >= 2 ? 9.5 : 5.25);
     }
 
     public double getHeavyAttackRadius() {
-        return switch (getFormPhase()) {
-            case 2 -> 18.0;
-            default -> 9.0;
-        };
+        return phaseSpec(getFormPhase()).combatParam("heavy_radius", getFormPhase() >= 2 ? 18.0 : 9.0);
     }
 
     public boolean tickHeavyAttack() {

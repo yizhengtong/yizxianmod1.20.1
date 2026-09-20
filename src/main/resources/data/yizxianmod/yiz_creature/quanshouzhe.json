@@ -1,0 +1,46 @@
+{
+  "entity_type": "yizxianmod:quanshouzhe",
+  "phases": [
+    {
+      "index": 1,
+      "attributes": {
+        "yizmodqzk:attack_strength": 60.0,
+        "yizmodqzk:life_steal": 10.0,
+        "yizmodqzk:conduction_cap": 25.0,
+        "minecraft:generic.attack_damage": 50.0
+      },
+      "combat": {
+        "attack_interval": 15,
+        "attack_range": 5.25,
+        "skill_params": {
+          "heavy_radius": 9.0
+        }
+      },
+      "advance": {
+        "type": "health_percent_below",
+        "value": 0.8
+      }
+    },
+    {
+      "index": 2,
+      "attributes": {
+        "yizmodqzk:attack_strength": 80.0,
+        "yizmodqzk:life_steal": 20.0,
+        "yizmodqzk:conduction_cap": 15.0,
+        "minecraft:generic.attack_damage": 65.0
+      },
+      "combat": {
+        "attack_interval": 7,
+        "attack_range": 9.5,
+        "skill_params": {
+          "heavy_radius": 18.0
+        }
+      },
+      "regress": {
+        "type": "health_percent_above",
+        "value": 0.8,
+        "hold_ticks": 60
+      }
+    }
+  ]
+}

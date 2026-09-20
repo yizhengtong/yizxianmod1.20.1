@@ -162,12 +162,15 @@ public class TiedoushiEntity extends YizxianMob {
     }
 
     public double getAttackRange() {
-        return TEMPLATE_ATTACK_RANGE;
+        // 组件优先（数据包/原型可覆盖），未配置回退实体模板值
+        return net.minecraft.client.yiz.creature.CreatureProfileRegistry.combatOf(this)
+            .rangeOr(TEMPLATE_ATTACK_RANGE);
     }
 
-    /** 整套攻击动画时长 +1 tick，播完立即接下一套。 */
+    /** 整套攻击动画时长 +1 tick，播完立即接下一套；可由战斗组件覆盖。 */
     public int getAttackInterval() {
-        return ATTACK_INTERVAL;
+        return net.minecraft.client.yiz.creature.CreatureProfileRegistry.combatOf(this)
+            .intervalOr(ATTACK_INTERVAL);
     }
 
     /** 近战一次：播放整套三段连贯攻击动画 + 回蓝；三次伤害在动画关键帧结算（见 aiStep）。 */

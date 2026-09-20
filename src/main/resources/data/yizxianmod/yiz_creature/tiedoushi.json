@@ -1,0 +1,15 @@
+{
+  "entity_type": "yizxianmod:tiedoushi",
+  "attributes": {
+    "yizmodqzk:armor": 8.0,
+    "yizmodqzk:damage_reduction": 10.0,
+    "yizmodqzk:damage_block": 0.4,
+    "yizmodqzk:spell_defense": 8.0,
+    "yizmodqzk:invincibility_mult": 16.0
+  },
+  "effects": [],
+  "combat": {
+    "attack_interval": 51,
+    "attack_range": 3.0
+  }
+}

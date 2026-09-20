@@ -169,6 +169,9 @@ public abstract class YizxianMob extends Mob implements PoshiBearer,
                 if (!this.yizxianAttrsApplied) {
                     this.yizxianAttrsApplied = true;
                     this.applyEntityAttributes();
+                    // 组件化配置：原型属性在实体自身默认值之后应用（实例补丁优先），未注册原型时为空操作；
+                    // 效果与战斗参数由各自读取点按需查（见 InstanceEffectState / CreatureProfileRegistry.combatOf）
+                    net.minecraft.client.yiz.creature.CreatureProfileRegistry.apply(this);
                     this.registerSecureHealth();
                     // 自走棋棋子：applyEntityAttributes 设 1 星基准后，按外部表费用/星级放大随倍率属性
                     this.applyChessStarIfNeeded();
