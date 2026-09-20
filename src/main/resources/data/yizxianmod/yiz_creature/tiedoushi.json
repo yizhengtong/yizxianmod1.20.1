@@ -10,6 +10,12 @@
   "effects": [],
   "combat": {
     "attack_interval": 51,
-    "attack_range": 3.0
+    "attack_range": 3.0,
+    "skill_id": "yizxianmod:tiedoushi_skill1",
+    "skill_params": {
+      "start_tick": 20,
+      "duration_tick": 20,
+      "radius": 12.0
+    }
   }
 }

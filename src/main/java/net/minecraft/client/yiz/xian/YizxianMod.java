@@ -157,6 +157,8 @@ public class YizxianMod {
 
     private void commonSetup(final FMLCommonSetupEvent event) {
         LOGGER.info("Yiz Xian Mod 1.20.1 初始化完成");
+        // 注册生物技能（供战斗组件 skill_id 派发）
+        net.minecraft.client.yiz.creature.CreatureSkills.register(new net.minecraft.client.yiz.xian.entity.TiedoushiEntity.Skill1());
         // 注册 SimpleChannel 网络
         net.minecraft.client.yiz.xian.network.NetworkHandler.register();
         // /yiz sx zddk <数值>：给主手物品添加涨跌多空属性修饰符（SimpleCommandRegistry 已由前置库订阅）

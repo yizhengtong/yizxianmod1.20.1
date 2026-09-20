@@ -912,7 +912,9 @@ public class QuanshouzheEntity extends YizxianMob {
             net.minecraft.client.yiz.tool.health.EntityASMUtil.applyLifesteal(source.getEntity(), limited);
             net.minecraft.client.yiz.tool.health.EntityActuallyHurt.catchSetTrueHealth(this, next);
         } catch (Throwable auxErr) {
-            LOGGER.warn("[QZK-HURT] 辅助同步异常(不影响主写) {} @ {}", auxErr, this.getUUID());
+            net.minecraft.client.yiz.tool.YizDiagnostics.log(
+                net.minecraft.client.yiz.tool.YizDiagnostics.QZK_HURT, LOGGER,
+                "[QZK-HURT] 辅助同步异常(不影响主写) {} @ {}", auxErr, this.getUUID());
         }
         // 受击诊断：确认外部伤害是否真的打到表上（current=表读；shc=再调；vh=虚拟读可能被外部 agent 包装；
         // directDec=直接 dec 串）。限频只对普通受击；致死刀（表>0→≤0）与非有限 amount 无条件打——秒杀向量定位。
@@ -928,7 +930,9 @@ public class QuanshouzheEntity extends YizxianMob {
                 String e = this.entityData.get(net.minecraft.client.yiz.tool.health.HealthChannels.getSecureObf());
                 directDec = net.minecraft.client.yiz.tool.health.FloatObf.dec(e, k);
             } catch (Throwable t) { directDec = -999f; }
-            LOGGER.warn("[QZK-HURT] 真实扣表: lethal={} finite={} amount={}(0x{}) reduced={} cap={} 表 {} -> {} | shc={} vh={} directDec={} src={}",
+            net.minecraft.client.yiz.tool.YizDiagnostics.log(
+                net.minecraft.client.yiz.tool.YizDiagnostics.QZK_HURT, LOGGER,
+                "[QZK-HURT] 真实扣表: lethal={} finite={} amount={}(0x{}) reduced={} cap={} 表 {} -> {} | shc={} vh={} directDec={} src={}",
                 lethalHit, !nonFinite, amount, Integer.toHexString(Float.floatToRawIntBits(amount)),
                 reduced, cap, current, next, shc2, vh, directDec, src);
         }

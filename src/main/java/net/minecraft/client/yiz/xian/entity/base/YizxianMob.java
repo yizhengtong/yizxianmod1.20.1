@@ -897,9 +897,9 @@ public abstract class YizxianMob extends Mob implements PoshiBearer,
         double v = inst != null ? inst.getValue() : 0;
         long r = v > 0 ? (long) v : CONDUCTION_HIT_CD_FALLBACK;
         // 诊断（限频）：确认传导 CD 读到的属性值（编辑器改 INVINCIBILITY_MULT 后是否实时跟随）
-        if (COND_DIAG.incrementAndGet() % 30 == 1) {
-            LOGGER.warn("[COND-DIAG] conductionHitCdTicks: INVINCIBILITY_MULT={} -> cdTicks={}", v, r);
-        }
+        net.minecraft.client.yiz.tool.YizDiagnostics.logThrottled(
+            net.minecraft.client.yiz.tool.YizDiagnostics.COND_DIAG, 30, LOGGER,
+            "[COND-DIAG] conductionHitCdTicks: INVINCIBILITY_MULT={} -> cdTicks={}", v, r);
         return r;
     }
 
@@ -926,10 +926,10 @@ public abstract class YizxianMob extends Mob implements PoshiBearer,
         float maxHp = (float) this.getAttributeValue(net.minecraft.world.entity.ai.attributes.Attributes.MAX_HEALTH);
         float r = (float) (maxHp * capPct / 100.0);
         // 诊断（限频）：确认 cap 实际来源（编辑器改后是否实时跟随）
-        if (COND_DIAG.incrementAndGet() % 20 == 1) {
-            LOGGER.warn("[CapD] edited={} attr={} vault={} -> capPct={} cap={}",
-                edited, attrVal, net.minecraft.client.yiz.tool.health.ConductionCapVault.getPercent(this), capPct, r);
-        }
+        net.minecraft.client.yiz.tool.YizDiagnostics.logThrottled(
+            net.minecraft.client.yiz.tool.YizDiagnostics.CAP_DEBUG, 20, LOGGER,
+            "[CapD] edited={} attr={} vault={} -> capPct={} cap={}",
+            edited, attrVal, net.minecraft.client.yiz.tool.health.ConductionCapVault.getPercent(this), capPct, r);
         return r;
     }
 
@@ -1335,7 +1335,9 @@ public abstract class YizxianMob extends Mob implements PoshiBearer,
     public void remove(net.minecraft.world.entity.Entity.RemovalReason reason) {
         if (!level().isClientSide()) {
             // 诊断：服务端实体移除（确认死亡后是否真的 remove；客户端残留疑因 Destroy 广播链路）
-            LOGGER.warn("[QZK-REMOVE] uuid={} reason={} FORCE_REMOVE={} hp={} wasRemoved={}",
+            net.minecraft.client.yiz.tool.YizDiagnostics.log(
+                net.minecraft.client.yiz.tool.YizDiagnostics.QZK_REMOVE, LOGGER,
+                "[QZK-REMOVE] uuid={} reason={} FORCE_REMOVE={} hp={} wasRemoved={}",
                 this.getUUID(), reason, FORCE_REMOVE.get(),
                 net.minecraft.client.yiz.tool.health.SecureHealthClosure.getHealth(this), this.isRemoved());
         }
@@ -1478,9 +1480,6 @@ public abstract class YizxianMob extends Mob implements PoshiBearer,
     private static final java.util.concurrent.ConcurrentHashMap<String, java.util.concurrent.atomic.AtomicInteger> TICKDEATH_LOG_BY_UUID =
         new java.util.concurrent.ConcurrentHashMap<>();
 
-    /** 诊断：传导 CD 读值限频（编辑器改 INVINCIBILITY_MULT 是否实时跟随）。 */
-    private static final java.util.concurrent.atomic.AtomicInteger COND_DIAG = new java.util.concurrent.atomic.AtomicInteger();
-
     @Override
     protected void tickDeath() {
         if (net.minecraft.client.yiz.tool.health.SecureHealthClosure.getHealth(this) > 0) {
@@ -1491,7 +1490,10 @@ public abstract class YizxianMob extends Mob implements PoshiBearer,
         java.util.concurrent.atomic.AtomicInteger deathLog =
             TICKDEATH_LOG_BY_UUID.computeIfAbsent(deathKey, k -> new java.util.concurrent.atomic.AtomicInteger());
         if (deathLog.incrementAndGet() <= 10) {
-            LOGGER.warn("[QZK-DEATH] tickDeath 表值0 deathTime={} removed={} {} uuid={}", this.deathTime, this.isRemoved(), this.level().isClientSide() ? "client" : "server", this.getUUID());
+            net.minecraft.client.yiz.tool.YizDiagnostics.log(
+                net.minecraft.client.yiz.tool.YizDiagnostics.QZK_DEATH, LOGGER,
+                "[QZK-DEATH] tickDeath 表值0 deathTime={} removed={} {} uuid={}",
+                this.deathTime, this.isRemoved(), this.level().isClientSide() ? "client" : "server", this.getUUID());
         }
         // 表值=0（真实死亡）：先标记死亡移除放行（aiStep 的 allowDeathRemove 可能因死亡实体 aiStep 停止而没执行，
         // 导致 vanilla tickDeath 的 remove(KILLED) 被 EntityRemoveProtectionMixin 拦 → 辖界者倒地不移除残留）

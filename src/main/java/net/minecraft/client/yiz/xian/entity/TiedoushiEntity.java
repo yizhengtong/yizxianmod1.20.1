@@ -88,8 +88,9 @@ public class TiedoushiEntity extends YizxianMob {
     private boolean attackPending;
     private int attackDamageCursor;
     private int attackBaseTick = -1;
-    private boolean skillPending;
-    private int skillDamageStartTick = -1;
+    /** 当前正在施放的技能（由战斗组件的 skillId 选出）与已持续 tick。 */
+    private net.minecraft.client.yiz.creature.CreatureSkill activeSkill;
+    private int skillElapsed;
 
     /** 同步数据懒加载（避免类加载期 defineId 抢占其它实体的数据 id）。 */
     private static final class DataHolder {
@@ -212,14 +213,12 @@ public class TiedoushiEntity extends YizxianMob {
             }
         }
 
-        // 技能：动画第 1 秒起每 tick 结算，持续 1 秒
-        if (this.skillPending) {
-            int elapsed = this.tickCount - this.skillDamageStartTick;
-            if (elapsed >= 0 && elapsed < SKILL_DAMAGE_DURATION_TICK) {
-                this.dealSkillDamage(1.0F / SKILL_DAMAGE_DURATION_TICK);
-            }
-            if (elapsed >= SKILL_DAMAGE_DURATION_TICK) {
-                this.skillPending = false;
+        // 技能：由技能注册表按战斗组件的 skillId 派发，每 tick 驱动（具体行为在技能实现里）
+        var combatSpec = net.minecraft.client.yiz.creature.CreatureProfileRegistry.combatOf(this);
+        if (this.activeSkill != null) {
+            if (!this.activeSkill.tick(this, combatSpec, this.skillElapsed++)) {
+                this.activeSkill.stop(this);
+                this.activeSkill = null;
             }
         }
 
@@ -231,14 +230,16 @@ public class TiedoushiEntity extends YizxianMob {
             ManaTracker.add(this, -(MANA_REGEN * 0.05F) - (MANA_DECAY_PER_SECOND / 20.0F));
         }
 
-        // 满蓝且处于仇恨状态 → 释放一次（释放瞬间清零，从零开始继续累加）
-        if (!this.skillPending && hasAggro) {
+        // 满蓝且处于仇恨状态 → 选中技能并开始施放（满蓝清零，从零继续累加）
+        if (this.activeSkill == null && hasAggro) {
             float max = ManaTracker.getMax(this);
             if (max > 0.0F && ManaTracker.get(this) >= max) {
-                ManaTracker.setZero(this);
-                this.skillPending = true;
-                this.skillDamageStartTick = this.tickCount + SKILL_DAMAGE_START_TICK;
-                this.level().broadcastEntityEvent(this, EVENT_SKILL);
+                var skill = net.minecraft.client.yiz.creature.CreatureSkills.fromSpec(combatSpec);
+                if (skill != null && skill.start(this, combatSpec)) {
+                    ManaTracker.setZero(this);
+                    this.activeSkill = skill;
+                    this.skillElapsed = 0;
+                }
             }
         }
     }
@@ -259,21 +260,62 @@ public class TiedoushiEntity extends YizxianMob {
 
     /** skill1 结算：12 格半径，每远 1 格衰减 8%；2.5×攻击力 + 目标最大生命 50%（玩家 25%）真伤。
      *  ratio = 本次结算占总量的比例（持续伤害按 tick 分批，合计 1.0，总输出与一次性相同）。
+     *  半径/倍率/衰减均可由技能参数覆盖，缺省用本实体常量。
      *  普通伤害走破无敌帧通道，否则每 tick 的等量伤害会被 20 tick 无敌帧吞掉。 */
-    private void dealSkillDamage(float ratio) {
+    private void dealSkillDamage(float ratio, net.minecraft.client.yiz.creature.CombatSpec spec) {
         double atk = this.getAttributeValue(Attributes.ATTACK_DAMAGE);
-        for (LivingEntity t : nearby(SKILL_RADIUS)) {
-            double factor = 1.0 - Math.sqrt(this.distanceToSqr(t)) * SKILL_FALLOFF_PER_BLOCK;
+        double radius = spec.paramOr("radius", SKILL_RADIUS);
+        double falloff = spec.paramOr("falloff", SKILL_FALLOFF_PER_BLOCK);
+        double mult = spec.paramOr("attack_mult", SKILL_ATTACK_MULT);
+        double dreamMob = spec.paramOr("dream_mob", SKILL_DREAM_MOB);
+        double dreamPlayer = spec.paramOr("dream_player", SKILL_DREAM_PLAYER);
+        for (LivingEntity t : nearby(radius)) {
+            double factor = 1.0 - Math.sqrt(this.distanceToSqr(t)) * falloff;
             if (factor <= 0.0) continue;
-            float dmg = (float) (SKILL_ATTACK_MULT * atk * factor * ratio);
+            float dmg = (float) (mult * atk * factor * ratio);
             if (dmg > 0.0F) {
                 net.minecraft.client.yiz.api.YizModQZKAPI.pierceInvulnerabilityDamage(t, dmg, this);
             }
-            double pct = (t instanceof Player ? SKILL_DREAM_PLAYER : SKILL_DREAM_MOB) * factor;
+            double pct = (t instanceof Player ? dreamPlayer : dreamMob) * factor;
             double amount = t.getMaxHealth() * pct * ratio;
             if (amount > 0.0) {
                 EntityASMUtil.applyProportionalDreamDamage(this, t, amount);
             }
+        }
+    }
+
+    /**
+     * 铁斗士 skill1：动画第 1 秒起每 tick 一跳、持续 1 秒（分批结算，总输出与一次性相同）。
+     *
+     * <p>无状态实现：施放进度由实体的 skillElapsed 提供。开始/持续时间可由技能参数
+     * {@code start_tick} / {@code duration_tick} 覆盖。</p>
+     */
+    public static final class Skill1 implements net.minecraft.client.yiz.creature.CreatureSkill {
+        public static final net.minecraft.resources.ResourceLocation ID =
+            new net.minecraft.resources.ResourceLocation("yizxianmod", "tiedoushi_skill1");
+
+        @Override
+        public net.minecraft.resources.ResourceLocation id() {
+            return ID;
+        }
+
+        @Override
+        public boolean start(LivingEntity caster, net.minecraft.client.yiz.creature.CombatSpec spec) {
+            caster.level().broadcastEntityEvent(caster, EVENT_SKILL);
+            return true;
+        }
+
+        @Override
+        public boolean tick(LivingEntity caster, net.minecraft.client.yiz.creature.CombatSpec spec, int elapsed) {
+            if (!(caster instanceof TiedoushiEntity entity)) return false;
+            int startTick = (int) spec.paramOr("start_tick", SKILL_DAMAGE_START_TICK);
+            int duration = (int) spec.paramOr("duration_tick", SKILL_DAMAGE_DURATION_TICK);
+            if (duration <= 0) return false;
+            int t = elapsed - startTick;
+            if (t >= 0 && t < duration) {
+                entity.dealSkillDamage(1.0F / duration, spec);
+            }
+            return elapsed < startTick + duration;
         }
     }
 
