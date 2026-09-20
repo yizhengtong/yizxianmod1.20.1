@@ -19,6 +19,14 @@ import net.minecraft.world.entity.AnimationState;
  */
 public class TiedoushiModel<T extends TiedoushiEntity> extends HierarchicalModel<T> {
 
+    /**
+     * 动画播放速度倍率：与攻击速度同步（1.3 = 快 30%）。
+     *
+     * <p>用原版 {@code animate(state, def, ageInTicks, speed)} 重载提速，不动 Blockbench 关键帧；
+     * 实体的伤害关键帧 tick 数已按同一倍率折算（见 {@code TiedoushiEntity.SPEED_SCALE}），两者必须一致。</p>
+     */
+    private static final float ANIM_SPEED = 1.3F;
+
     private final ModelPart root;
     private final ModelPart all;
     private final ModelPart body;
@@ -119,24 +127,27 @@ public class TiedoushiModel<T extends TiedoushiEntity> extends HierarchicalModel
         this.head.xRot = headPitch * Mth.DEG_TO_RAD;
 
         // 待机/行走/追击：三条互斥的循环动画（用 walkAnimation 的稳定移动标志，避免渲染帧抖动导致状态反复重启）
-        boolean moving = entity.walkAnimation.isMoving();
+        // 只有存在目标时才播行走/追击：铁斗士是棋子，没有游荡 AI，无目标时即便被攻击击退推着走，
+        // 也应保持原地静止的待机动画（walkAnimation 会因被动位移而被判定为"在走"）。
+        boolean hasTarget = entity.getTarget() != null && entity.getTarget().isAlive();
+        boolean moving = entity.walkAnimation.isMoving() && hasTarget;
         boolean chasing = moving && entity.getTarget() != null;
         entity.idleState.animateWhen(!moving, entity.tickCount);
         entity.walkState.animateWhen(moving && !chasing, entity.tickCount);
         entity.chaseState.animateWhen(chasing, entity.tickCount);
-        this.animate(entity.idleState, TiedoushiAnimations.IDLE, ageInTicks);
-        this.animate(entity.walkState, TiedoushiAnimations.WALK, ageInTicks);
-        this.animate(entity.chaseState, TiedoushiAnimations.CHASE, ageInTicks);
+        this.animate(entity.idleState, TiedoushiAnimations.IDLE, ageInTicks, ANIM_SPEED);
+        this.animate(entity.walkState, TiedoushiAnimations.WALK, ageInTicks, ANIM_SPEED);
+        this.animate(entity.chaseState, TiedoushiAnimations.CHASE, ageInTicks, ANIM_SPEED);
 
         // 攻击：整套三段连贯动画，播完即停
         if (entity.attackState.isStarted()) {
-            this.animate(entity.attackState, TiedoushiAnimations.ATTACK, ageInTicks);
+            this.animate(entity.attackState, TiedoushiAnimations.ATTACK, ageInTicks, ANIM_SPEED);
             stopWhenDone(entity.attackState, TiedoushiAnimations.ATTACK.lengthInSeconds() * 1000.0F + 60.0F);
         }
 
         // 技能
         if (entity.skillState.isStarted()) {
-            this.animate(entity.skillState, TiedoushiAnimations.SKILL_1, ageInTicks);
+            this.animate(entity.skillState, TiedoushiAnimations.SKILL_1, ageInTicks, ANIM_SPEED);
             stopWhenDone(entity.skillState, TiedoushiAnimations.SKILL_1.lengthInSeconds() * 1000.0F + 60.0F);
         }
     }

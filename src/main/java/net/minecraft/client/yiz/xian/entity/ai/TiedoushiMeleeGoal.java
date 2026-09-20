@@ -19,6 +19,8 @@ public class TiedoushiMeleeGoal extends Goal {
 
     /** 重新寻路间隔（tick）：过密会反复重置寻路器导致原地踏步。 */
     private static final int REPATH_INTERVAL = 10;
+    /** 攻击中的重寻路间隔：目标正被击飞推开，需要更紧地跟随。 */
+    private static final int ATTACK_REPATH_INTERVAL = 5;
 
     private final TiedoushiEntity mob;
     private int attackCooldown;
@@ -64,9 +66,18 @@ public class TiedoushiMeleeGoal extends Goal {
         this.mob.getLookControl().setLookAt(target, 30.0F, 30.0F);
         double range = this.mob.getAttackRange();
         double distSq = this.mob.distanceToSqr(target);
-        if (distSq > range * range) {
+        boolean attacking = this.attackCooldown > 0;
+
+        // 移动策略：
+        //  · 超出攻击距离 → 寻路接近；
+        //  · 攻击中（整套动画播放期间）→ 继续朝目标水平移动。攻击动画里已做脚步位移动画，
+        //    所以边打边压上去没有动画违和；否则目标被击飞推开后本体会原地挥空。
+        //    （留 1 格贴身余量，避免顶进目标碰撞箱里抖动）
+        //  · 其余情况（在攻击距离内且未在攻击）→ 停下。
+        if (distSq > range * range || (attacking && distSq > 1.0)) {
             if (this.repathCooldown <= 0) {
-                this.repathCooldown = REPATH_INTERVAL;
+                // 攻击中重寻路更密：击飞每个周期会把目标推开约 1.8 格，10 tick 的旧路径会明显滞后
+                this.repathCooldown = attacking ? ATTACK_REPATH_INTERVAL : REPATH_INTERVAL;
                 this.mob.getNavigation().moveTo(target, 1.2);
             }
         } else if (!this.mob.getNavigation().isDone()) {

@@ -1324,6 +1324,16 @@ public abstract class YizxianMob extends Mob implements PoshiBearer,
         this.hurtTime = 10;
         this.hurtDuration = 10;
         this.broadcastHurtFlash(source);
+        // 仇恨记录：自管 hurt 不走 vanilla 链，原版的 setLastHurtByMob 从未执行 →
+        // getLastHurtByMob() 恒为 null，依赖它的反击 goal（中立单位被玩家攻击后反击）永远不启动。
+        // 这里显式补上"被谁打"，玩家攻击才会产生仇恨。
+        if (source.getEntity() instanceof net.minecraft.world.entity.LivingEntity attacker
+                && attacker != this) {
+            this.setLastHurtByMob(attacker);
+            if (attacker instanceof net.minecraft.world.entity.player.Player pl) {
+                this.setLastHurtByPlayer(pl);
+            }
+        }
         if (next <= 0) {
             this.die(source);
             return true;

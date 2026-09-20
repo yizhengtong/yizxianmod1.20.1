@@ -5,16 +5,20 @@
     "yizmodqzk:damage_reduction": 10.0,
     "yizmodqzk:damage_block": 0.4,
     "yizmodqzk:spell_defense": 8.0,
-    "yizmodqzk:invincibility_mult": 16.0
+    "yizmodqzk:invincibility_mult": 16.0,
+    "yizmodqzk:knockback_attack": 100.0,
+    "yizmodqzk:knockback_height": 2.0,
+    "yizmodqzk:knockback_distance": 1.8,
+    "yizmodqzk:knockback_time": 24.0
   },
   "effects": [],
   "combat": {
-    "attack_interval": 51,
+    "attack_interval": 39,
     "attack_range": 3.0,
     "skill_id": "yizxianmod:tiedoushi_skill1",
     "skill_params": {
-      "start_tick": 20,
-      "duration_tick": 20,
+      "start_tick": 15,
+      "duration_tick": 15,
       "radius": 12.0
     }
   }

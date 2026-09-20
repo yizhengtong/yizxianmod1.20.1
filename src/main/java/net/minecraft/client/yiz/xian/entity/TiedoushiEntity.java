@@ -45,9 +45,23 @@ public class TiedoushiEntity extends YizxianMob {
     private static final double TEMPLATE_FOLLOW_RANGE = 60.0;
     private static final double TEMPLATE_REGEN = 0.5;
 
+    // ── 向前击飞（普攻命中按概率把目标沿「铁斗士→目标」连线抛出）──
+    /** 击飞触发概率(%)。 */
+    private static final double LAUNCH_CHANCE = 100.0;
+    /** 击飞高度(格)：抛物线顶点相对起飞点的高度。 */
+    private static final double LAUNCH_HEIGHT = 2.0;
+    /** 击飞水平(格)：沿连线推出的距离。 */
+    private static final double LAUNCH_DISTANCE = 1.8;
+    /** 击飞时间(tick)：上抛 + 下落总时长（顶点在 2/3 处）。1.2 秒 = 24 tick。 */
+    private static final double LAUNCH_TIME = 24.0;
+
+    // ── 战斗状态移速加成（贴脸衔接连续攻击；脱战移除）──
+    private static final double COMBAT_SPEED_BONUS = 0.15;
+    private static final java.util.UUID COMBAT_SPEED_ID = java.util.UUID.nameUUIDFromBytes(
+        ("yizxianmod:tiedoushi_combat_speed").getBytes(java.nio.charset.StandardCharsets.UTF_8));
+
     // ── 蓝条与技能 ──
-    private static final float MANA_MAX = 140.0F;
-    private static final float MANA_REGEN = 8.0F;
+    private static final float MANA_MAX = 140.0F;    private static final float MANA_REGEN = 8.0F;
     private static final float MANA_PER_ATTACK = 12.0F;
     private static final float MANA_DECAY_PER_SECOND = 10.0F; // 非仇恨状态每秒衰减
     private static final float SKILL_RADIUS = 12.0F;
@@ -56,13 +70,18 @@ public class TiedoushiEntity extends YizxianMob {
     private static final double SKILL_DREAM_MOB = 0.50;
     private static final double SKILL_DREAM_PLAYER = 0.25;
 
-    // ── 攻击伤害关键帧（tick，自整套攻击动画开始算：0.75s / 1.4s / 2.1s）──
-    private static final int[] ATTACK_DAMAGE_TICKS = {15, 28, 42};
+    // ── 攻击/动画节奏：整体比原始 Blockbench 动画快 30%（动画侧由 TiedoushiModel 的
+    //    ANIM_SPEED 提速，此处所有 tick 数按 1.3 折算，保证伤害关键帧仍落在对应动作上）──
+    /** 攻击/动画提速倍率（与 TiedoushiModel.ANIM_SPEED 必须一致）。 */
+    private static final double SPEED_SCALE = 1.3;
+
+    // ── 攻击伤害关键帧（tick，自整套攻击动画开始算；原 15/28/42 按 1.3 折算）──
+    private static final int[] ATTACK_DAMAGE_TICKS = {12, 22, 32};
     /** 三次伤害倍率：第 1 段 ×1.4，第 2/3 段 ×1.25。 */
     private static final double[] ATTACK_DAMAGE_MULT = {1.4, 1.25, 1.25};
-    // 技能：动画第 1 秒（20t）开始，每 tick 结算一次，持续 1 秒（20 次）
-    private static final int SKILL_DAMAGE_START_TICK = 20;
-    private static final int SKILL_DAMAGE_DURATION_TICK = 20;
+    // 技能：动画第 0.75 秒（15t）开始，每 tick 结算一次，持续 0.75 秒（15 次）
+    private static final int SKILL_DAMAGE_START_TICK = 15;
+    private static final int SKILL_DAMAGE_DURATION_TICK = 15;
 
     // ── 攻击范围 ──
     /** 第 1/3 段：以自身为中心半径 4 格。 */
@@ -72,8 +91,8 @@ public class TiedoushiEntity extends YizxianMob {
     private static final double ATTACK2_HALF_WIDTH = 1.5;
     private static final double ATTACK_HEIGHT = 3.0;
 
-    /** 整套攻击动画 2.5s（50t），间隔取 51t：上一套播完下一套立即接上。 */
-    private static final int ATTACK_INTERVAL = 51;
+    /** 整套攻击动画 2.5s（50t），提速 30% 后约 38.5t；间隔取 39t：上一套播完下一套立即接上。 */
+    private static final int ATTACK_INTERVAL = 39;
     private static final byte EVENT_ATTACK = 70;
     private static final byte EVENT_SKILL = 61;
 
@@ -111,7 +130,12 @@ public class TiedoushiEntity extends YizxianMob {
             .add(Attributes.ATTACK_DAMAGE, TEMPLATE_ATTACK)
             .add(Attributes.ARMOR, 0.0)
             .add(Attributes.KNOCKBACK_RESISTANCE, 0.0)
-            .add(Attributes.FOLLOW_RANGE, TEMPLATE_FOLLOW_RANGE);
+            .add(Attributes.FOLLOW_RANGE, TEMPLATE_FOLLOW_RANGE)
+            // 向前击飞所需属性：EntityAttributeGate 不会补建缺失实例，必须在此挂载
+            .add(net.minecraft.client.yiz.attribute.YizAttributes.KNOCKBACK_ATTACK.get(), 0.0)
+            .add(net.minecraft.client.yiz.attribute.YizAttributes.KNOCKBACK_HEIGHT.get(), 0.0)
+            .add(net.minecraft.client.yiz.attribute.YizAttributes.KNOCKBACK_DISTANCE.get(), 0.0)
+            .add(net.minecraft.client.yiz.attribute.YizAttributes.KNOCKBACK_TIME.get(), 0.0);
         addStandardCustomAttributes(builder);
         addManaAttributes(builder);
         return builder;
@@ -137,12 +161,39 @@ public class TiedoushiEntity extends YizxianMob {
         setAttr(YizAttributes.LIFE_REGEN_RATE, "life_regen_rate", TEMPLATE_REGEN);
         setAttr(YizAttributes.MAX_MANA, "max_mana", MANA_MAX);
         setAttr(YizAttributes.MANA_REGEN, "mana_regen", MANA_REGEN);
+        // 向前击飞：普攻命中按概率把目标沿连线抛出（高度/水平/时间共同决定弹道）
+        setAttr(YizAttributes.KNOCKBACK_ATTACK, "knockback_attack", LAUNCH_CHANCE);
+        setAttr(YizAttributes.KNOCKBACK_HEIGHT, "knockback_height", LAUNCH_HEIGHT);
+        setAttr(YizAttributes.KNOCKBACK_DISTANCE, "knockback_distance", LAUNCH_DISTANCE);
+        setAttr(YizAttributes.KNOCKBACK_TIME, "knockback_time", LAUNCH_TIME);
     }
 
     private void setAttr(net.minecraftforge.registries.RegistryObject<net.minecraft.world.entity.ai.attributes.Attribute> attr,
                          String idKey, double value) {
         net.minecraft.client.yiz.tool.attribute.EntityAttributeGate.set(this, attr, idKey, value);
         net.minecraft.client.yiz.tool.attribute.AttributeStandardizer.registerStandard(this, attr.get(), idKey, value);
+    }
+
+    /**
+     * 战斗状态移速加成：进入战斗（有存活目标）时挂上移速 modifier，脱战移除。
+     *
+     * <p>modifier 名用 {@code yizxianmod:} 前缀 + 固定 UUID：前缀让 20 tick 的属性审计把它当
+     * "家族自身 modifier"保留（见 {@code AttributeStandardizer.FAMILY_MODIFIER_PREFIXES}），
+     * 固定 UUID 保证幂等、不会重复叠加。MOVEMENT_SPEED 本身未注册进审计表
+     * （{@code applyVanillaDifficultyScale} 只注册 MAX_HEALTH），因此不会被判为外部篡改。</p>
+     */
+    private void applyCombatSpeed(boolean inCombat) {
+        var inst = this.getAttribute(Attributes.MOVEMENT_SPEED);
+        if (inst == null) return;
+        boolean applied = inst.getModifier(COMBAT_SPEED_ID) != null;
+        if (inCombat == applied) return;
+        if (inCombat) {
+            inst.addTransientModifier(new net.minecraft.world.entity.ai.attributes.AttributeModifier(
+                COMBAT_SPEED_ID, "yizxianmod:tiedoushi_combat_speed",
+                COMBAT_SPEED_BONUS, net.minecraft.world.entity.ai.attributes.AttributeModifier.Operation.ADDITION));
+        } else {
+            inst.removeModifier(COMBAT_SPEED_ID);
+        }
     }
 
     @Override
@@ -224,6 +275,9 @@ public class TiedoushiEntity extends YizxianMob {
 
         // 仇恨状态：有存活的攻击目标（中立单位被攻击后锁定攻击者）
         boolean hasAggro = this.getTarget() != null && this.getTarget().isAlive();
+
+        // 战斗状态移速加成：贴脸衔接连续攻击（脱战即移除，不影响巡逻/待机手感）
+        applyCombatSpeed(hasAggro);
 
         // 非仇恨不回蓝：撤销基类本 tick 的 MANA_REGEN 回蓝（MANA_REGEN × 0.05/tick），改为每秒衰减 10
         if (!hasAggro) {
