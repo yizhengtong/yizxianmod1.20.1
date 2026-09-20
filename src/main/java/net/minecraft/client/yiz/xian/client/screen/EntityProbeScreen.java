@@ -4,6 +4,7 @@ import com.mojang.blaze3d.platform.InputConstants;
 import org.lwjgl.glfw.GLFW;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.screens.inventory.AbstractContainerScreen;
+import net.minecraft.client.gui.screens.inventory.InventoryScreen;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.entity.LivingEntity;
@@ -19,6 +20,9 @@ import net.minecraft.client.yiz.xian.client.layout.GuiLayoutConfig;
 import net.minecraft.client.yiz.xian.menu.EntityProbeMenu;
 import net.minecraft.client.yiz.xian.network.C2SEntityProbeBlueRequestPayload;
 import net.minecraft.client.yiz.xian.network.NetworkHandler;
+
+import org.slf4j.Logger;
+import com.mojang.logging.LogUtils;
 
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -36,6 +40,8 @@ import java.util.Map;
  * 编辑界面提供「重置」按钮：清除玩家覆盖恢复默认布局。</p>
  */
 public class EntityProbeScreen extends AbstractContainerScreen<EntityProbeMenu> {
+
+    private static final Logger LOGGER = LogUtils.getLogger();
 
     private static final String LAYOUT_KEY = "entity_probe";
 
@@ -65,6 +71,8 @@ public class EntityProbeScreen extends AbstractContainerScreen<EntityProbeMenu> 
         node("A", "", EntityProbeGuiSpec.A_OX, EntityProbeGuiSpec.A_OY,
             EntityProbeGuiSpec.BG_W * 2, EntityProbeGuiSpec.BG_H * 2, true);
         node("A1", "A", 4 * 2, 8 * 2, 24 * 2, 24 * 2, true);
+        // A1.1：A1 左侧的背景投影（本体 112×144，与 A 面板其余元素一致 ×2 显示），顶部与 A1 对齐
+        node("A1_1", "A", 4 * 2 - 112 * 2 - 8, 8 * 2, 112 * 2, 144 * 2, true);
         node("A2", "A", 63 * 2, 12 * 2, 27 * 2, 16 * 2, true);
         node("A3", "A", 12 * 2, 39 * 2, 76 * 2, 5 * 2, true);
         node("A4", "A", 12 * 2, 47 * 2, 76 * 2, 5 * 2, true);
@@ -80,6 +88,7 @@ public class EntityProbeScreen extends AbstractContainerScreen<EntityProbeMenu> 
     // 纹理
     private static final ResourceLocation MAIN_BG = rl("main.png");
     private static final ResourceLocation T_A1 = rl("element_a1.png");
+    private static final ResourceLocation T_A1_1 = rl("element_a1_1.png");
     private static final ResourceLocation T_A2 = rl("element_a2.png");
     private static final ResourceLocation T_A3 = rl("element_a3.png");
     private static final ResourceLocation T_A3_EMPTY = rl("element_a3_empty.png");
@@ -120,6 +129,8 @@ public class EntityProbeScreen extends AbstractContainerScreen<EntityProbeMenu> 
     private int blueTick = 0;
     private long a2FlashUntil = 0;
     private int a7Scroll = 0;                 // A7 属性行滚动偏移（行号）
+    private boolean a1RenderFailed = false;   // A1 实体渲染失败只报一次，避免刷屏
+    private boolean showA11 = false;          // A1.1 背景投影显隐（点击 A1 切换）
 
     // ── 编辑器状态 ──
     private boolean editMode = false;
@@ -348,23 +359,32 @@ public class EntityProbeScreen extends AbstractContainerScreen<EntityProbeMenu> 
             return true;
         }
         if (button == 0) {
-            // 原版槽位先处理
-            if (super.mouseClicked(mouseX, mouseY, button)) return true;
+            // 自定义元素优先于原版容器：AbstractContainerScreen.mouseClicked 对 GUI 内点击恒返回 true，
+            // 放在它之后的判定会被吞掉（A1/A2/整窗拖动原先都是死代码）。
+            // A2：售卖槽占位，点击闪白
             int a2x = absOf("A2")[0], a2y = absOf("A2")[1];
             if (mx >= a2x && mx < a2x + scNode("A2", 27) && my >= a2y && my < a2y + scNode("A2", 16)) {
                 this.a2FlashUntil = System.currentTimeMillis() + 300;
                 return true;
             }
+            // A1：切换左侧背景投影（A1.1）显隐
+            int[] a1p = absOf("A1");
+            if (mx >= a1p[0] && mx < a1p[0] + scNode("A1", NODES.get("A1").w)
+                    && my >= a1p[1] && my < a1p[1] + scNode("A1", NODES.get("A1").h)) {
+                showA11 = !showA11;
+                return true;
+            }
+            // A 面板空白处：拖动整窗（命中真实槽位时让位给原版换装）
             int[] a = absOf("A");
-            if (mx >= a[0] && mx < a[0] + scNode("A", EntityProbeGuiSpec.BG_W)
-                    && my >= a[1] && my < a[1] + scNode("A", EntityProbeGuiSpec.BG_H)
-                    && menu.getCarried().isEmpty()) {
+            if (this.hoveredSlot == null && menu.getCarried().isEmpty()
+                    && mx >= a[0] && mx < a[0] + scNode("A", EntityProbeGuiSpec.BG_W * 2)
+                    && my >= a[1] && my < a[1] + scNode("A", EntityProbeGuiSpec.BG_H * 2)) {
                 dragging = true;
                 wholeDX = mouseX - leftPos;
                 wholeDY = mouseY - topPos;
                 return true;
             }
-            return false;
+            return super.mouseClicked(mouseX, mouseY, button);
         }
         return super.mouseClicked(mouseX, mouseY, button);
     }
@@ -493,7 +513,8 @@ public class EntityProbeScreen extends AbstractContainerScreen<EntityProbeMenu> 
         scaledBlit(gui, MAIN_BG, a[0], a[1],
             EntityProbeGuiSpec.BG_W, EntityProbeGuiSpec.BG_H, 2f * nodeFactor("A"));
 
-        scaledBlitAt(gui, "A1", T_A1);
+        drawA11(gui, mouseX, mouseY);
+        drawA1(gui, mouseX, mouseY);
         scaledBlitAt(gui, "A2", T_A2);
         scaledBlitAt(gui, "A5", T_A5);
         int[] a6 = absOf("A6");
@@ -507,6 +528,82 @@ public class EntityProbeScreen extends AbstractContainerScreen<EntityProbeMenu> 
             int[] p = absOf("A2");
             gui.fill(p[0], p[1], p[0] + scNode("A2", 27), p[1] + scNode("A2", 16), 0x60FFFFFF);
         }
+    }
+
+    /**
+     * A1.1：A1 左侧的背景投影面板，内里渲染被探查实体的整体模型（点击 A1 切换显隐）。
+     *
+     * <p>与 A1 头像同一套渲染入口，但占满整块投影板：实体脚底贴板内底部，
+     * 高度约占板高 82%；跟随鼠标转向；裁剪在投影板矩形内。</p>
+     */
+    private void drawA11(GuiGraphics gui, int mouseX, int mouseY) {
+        if (!showA11) return;
+        Node n = NODES.get("A1_1");
+        int[] p = absOf("A1_1");
+        int w = scNode("A1_1", n.w);
+        int h = scNode("A1_1", n.h);
+        if (w < 12 || h < 12) return;
+        scaledBlit(gui, T_A1_1, p[0], p[1], n.w, n.h, nodeFactor("A1_1"));
+        LivingEntity t = targetEntity();
+        if (t == null) return;
+        float body = Math.max(t.getBbWidth(), t.getBbHeight());
+        if (body <= 0.01f) body = 1f;
+        int scale = Math.max(1, Math.round(h * 0.82f / body));
+        int cx = p[0] + w / 2;
+        int footY = p[1] + h - Math.max(3, Math.round(h * 0.08f));
+        gui.enableScissor(p[0], p[1], p[0] + w, p[1] + h);
+        gui.pose().pushPose();
+        // GUI 中 z 越大越近：实体整体拉到投影板（z=0）之前。
+        // 否则模型远端顶点的 z（=50-scale×模型深度）会落到 0 以下，比板面更远而被深度剔除，
+        // 表现为实体随鼠标转向时被背景“盖住”缺块。
+        gui.pose().translate(0.0F, 0.0F, 200.0F);
+        try {
+            InventoryScreen.renderEntityInInventoryFollowsMouse(
+                gui, cx, footY, scale,
+                (float) cx - mouseX, (float) (footY - 50) - mouseY, t);
+        } catch (Exception e) {
+            if (!a1RenderFailed) {
+                a1RenderFailed = true;
+                LOGGER.warn("实体探查镜 A1.1 渲染实体失败: {}", t.getType(), e);
+            }
+        }
+        gui.pose().popPose();
+        gui.disableScissor();
+    }
+
+    /**
+     * A1：先画头像框纹理，再把被探查实体实时渲染进框内。
+     *
+     * <p>实体脚底对齐框内底部、按包围盒（宽高取大）归一化缩放，使其高度约占框高 75%，
+     * 落在圆形框的内切范围内；跟随鼠标转向；裁剪到 A1 矩形，防止溢出到 GUI 其它区域。
+     * 目标实体在客户端不可见（未加载/已移除）时只画框。</p>
+     */
+    private void drawA1(GuiGraphics gui, int mouseX, int mouseY) {
+        scaledBlitAt(gui, "A1", T_A1);
+        LivingEntity t = targetEntity();
+        if (t == null) return;
+        Node n = NODES.get("A1");
+        int[] p = absOf("A1");
+        int w = scNode("A1", n.w);
+        int h = scNode("A1", n.h);
+        if (w < 12 || h < 12) return;
+        float body = Math.max(t.getBbWidth(), t.getBbHeight());
+        if (body <= 0.01f) body = 1f;
+        int scale = Math.max(1, Math.round(h * 0.75f / body));
+        int cx = p[0] + w / 2;
+        int footY = p[1] + h - Math.max(2, Math.round(h * 0.1f));
+        gui.enableScissor(p[0], p[1], p[0] + w, p[1] + h);
+        try {
+            InventoryScreen.renderEntityInInventoryFollowsMouse(
+                gui, cx, footY, scale,
+                (float) cx - mouseX, (float) (footY - 50) - mouseY, t);
+        } catch (Exception e) {
+            if (!a1RenderFailed) {
+                a1RenderFailed = true;
+                LOGGER.warn("实体探查镜 A1 渲染实体失败: {}", t.getType(), e);
+            }
+        }
+        gui.disableScissor();
     }
 
     /** 在绝对坐标 (x,y) 处以元素视觉因子 f 等比绘制贴图。 */
@@ -584,7 +681,9 @@ public class EntityProbeScreen extends AbstractContainerScreen<EntityProbeMenu> 
         }
         all.add(new A7Row(I_ARMOR, "护甲防御", v));
 
-        if (hasAttr(t, YizAttributes.ATTACK_STRENGTH)) {
+        // 攻击强度是百分比加成（0 = 无加成，伤害走 vanilla ATTACK_DAMAGE）；
+        // 攻击强度为 0 时回退显示 vanilla 攻击力，否则铁斗士这类实体面板只会显示 0。
+        if (hasAttr(t, YizAttributes.ATTACK_STRENGTH) && modAttr(t, YizAttributes.ATTACK_STRENGTH) != 0) {
             v = num(modAttr(t, YizAttributes.ATTACK_STRENGTH));
         } else if (t.getAttribute(Attributes.ATTACK_DAMAGE) != null) {
             v = num(t.getAttribute(Attributes.ATTACK_DAMAGE).getValue());

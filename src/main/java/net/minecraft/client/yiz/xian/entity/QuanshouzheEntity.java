@@ -66,9 +66,7 @@ public class QuanshouzheEntity extends YizxianMob {
 
     private static final double RAGE_SPEED_BONUS = 0.2;
     // 护甲/法防指数减伤参数（与前置库 LivingEntityMixin 一致：锚定 x=20→50%、x=50→75%）
-    private static final double EXP_REDUCTION_BASE = 40.0;
-    private static final double EXP_REDUCTION_EXP =
-        Math.log(2.0) / Math.log(1.0 + 20.0 / EXP_REDUCTION_BASE);
+    // 减伤公式常量已统一到 net.minecraft.client.yiz.tool.health.DamageReductionChain
     // 1.20.1 AttributeModifier 用 UUID（非 ResourceLocation）；确定性 UUID 保证 remove 幂等
     private static final java.util.UUID RAGE_SPEED_ID =
         java.util.UUID.nameUUIDFromBytes((YizxianMod.MODID + ":quanshouzhe_rage_speed").getBytes(java.nio.charset.StandardCharsets.UTF_8));
@@ -827,31 +825,8 @@ public class QuanshouzheEntity extends YizxianMob {
         //  护甲/法防指数减免（物理→ARMOR，其余→SPELL_DEFENSE）：与前置库 LivingEntityMixin 同一公式，
         //    让辖界者的 ARMOR/SPELL_DEFENSE 属性真正生效（override hurt 不走 vanilla 护甲公式）。
         //    近战（直接命中实体==来源实体）判物理走 ARMOR（对齐 1.21.1；1.20.1 无 IS_PLAYER_ATTACK tag）。
-        net.minecraft.world.entity.Entity directHit = source.getDirectEntity();
-        boolean isMelee = directHit instanceof net.minecraft.world.entity.LivingEntity
-            && directHit == source.getEntity();
-        boolean isPhysical = source.is(DamageTypeTags.IS_PROJECTILE)
-                || source.is(DamageTypeTags.IS_EXPLOSION)
-                || source.is(DamageTypeTags.IS_FALL)
-                || isMelee;
-        var expAttr = isPhysical ? YizAttributes.ARMOR : YizAttributes.SPELL_DEFENSE;
-        var expInst = this.getAttribute(expAttr.get());
-        if (expInst != null && expInst.getValue() > 0) {
-            double reduction = 1.0 - Math.pow(
-                    1.0 + expInst.getValue() / EXP_REDUCTION_BASE,
-                    -EXP_REDUCTION_EXP);
-            amount *= (float) (1.0 - Math.min(1.0, reduction));
-        }
-
-        float reduced = amount;
-        //  百分比减免
-        var redInst = this.getAttribute(net.minecraft.client.yiz.attribute.YizAttributes.DAMAGE_REDUCTION.get());
-        if (redInst != null && redInst.getValue() > 0)
-            reduced *= (float) (1.0 - Math.min(1.0, redInst.getValue() / 100.0));
-        //  固定格挡
-        var blockInst = this.getAttribute(net.minecraft.client.yiz.attribute.YizAttributes.DAMAGE_BLOCK.get());
-        if (blockInst != null && blockInst.getValue() > 0)
-            reduced = Math.max(0, reduced - (float) blockInst.getValue());
+        // 5 层减伤（原版护甲 + 通用/法术防御指数 + 全伤害减免 + 格挡），与基类传导链同一实现
+        float reduced = net.minecraft.client.yiz.tool.health.DamageReductionChain.apply(this, source, amount);
         //  传导限伤（测试阶段走硬编码 conductionCap()=1；正式版改回 maxHp × conduction_cap%）
         float cap = conductionCap();
         float limited = Math.min(reduced, cap);

@@ -31,68 +31,14 @@ public final class YizxianEntityTypes {
             .build("quanshouzhe"));
 
     /**
-     * 邪狱龙（踏虚体邪狱龙）Boss。碰撞箱按源模组比例（3.0×6.0），GeckoLib 动画。
+     * 铁斗士（三费棋子）。碰撞箱按模型比例（1.0×2.7，模型高 43 单位），纯近战 + 满蓝释放 skill1。
      */
-    public static final RegistryObject<EntityType<net.minecraft.client.yiz.xian.entity.XieyulongEntity>> XIEYULONG =
-        ENTITY_TYPES.register("xieyulong", () -> EntityType.Builder.of(
-            (EntityType<net.minecraft.client.yiz.xian.entity.XieyulongEntity> type,
+    public static final RegistryObject<EntityType<net.minecraft.client.yiz.xian.entity.TiedoushiEntity>> TIEDOUSHI =
+        ENTITY_TYPES.register("tiedoushi", () -> EntityType.Builder.of(
+            (EntityType<net.minecraft.client.yiz.xian.entity.TiedoushiEntity> type,
              net.minecraft.world.level.Level level) ->
-                new net.minecraft.client.yiz.xian.entity.XieyulongEntity(type, level),
-            MobCategory.MONSTER)
-            .sized(3.0f, 6.0f)
-            .fireImmune()
-            .build("xieyulong"));
-
-    /**
-     * 邪狱龙三技能弹道实体（火球/陨石/毒云，无 AI 无碰撞箱，无渲染器靠 vanilla 粒子）。
-     */
-    public static final RegistryObject<EntityType<net.minecraft.client.yiz.xian.entity.skill.XieyulongFireEntity>> XIEYULONG_FIRE =
-        ENTITY_TYPES.register("xieyulong_fire", () -> EntityType.Builder.of(
-            (EntityType<net.minecraft.client.yiz.xian.entity.skill.XieyulongFireEntity> type,
-             net.minecraft.world.level.Level level) ->
-                new net.minecraft.client.yiz.xian.entity.skill.XieyulongFireEntity(type, level),
+                new net.minecraft.client.yiz.xian.entity.TiedoushiEntity(type, level),
             MobCategory.MISC)
-            .sized(0.2f, 0.2f)
-            .build("xieyulong_fire"));
-
-    public static final RegistryObject<EntityType<net.minecraft.client.yiz.xian.entity.skill.XieyulongMeteorEntity>> XIEYULONG_METEOR =
-        ENTITY_TYPES.register("xieyulong_meteor", () -> EntityType.Builder.of(
-            (EntityType<net.minecraft.client.yiz.xian.entity.skill.XieyulongMeteorEntity> type,
-             net.minecraft.world.level.Level level) ->
-                new net.minecraft.client.yiz.xian.entity.skill.XieyulongMeteorEntity(type, level),
-            MobCategory.MISC)
-            .sized(0.2f, 0.2f)
-            .build("xieyulong_meteor"));
-
-    public static final RegistryObject<EntityType<net.minecraft.client.yiz.xian.entity.skill.XieyulongPoisonCloudEntity>> XIEYULONG_POISON_CLOUD =
-        ENTITY_TYPES.register("xieyulong_poison_cloud", () -> EntityType.Builder.of(
-            (EntityType<net.minecraft.client.yiz.xian.entity.skill.XieyulongPoisonCloudEntity> type,
-             net.minecraft.world.level.Level level) ->
-                new net.minecraft.client.yiz.xian.entity.skill.XieyulongPoisonCloudEntity(type, level),
-            MobCategory.MISC)
-            .sized(1.0f, 1.0f)
-            .build("xieyulong_poison_cloud"));
-
-    /**
-     * 踏虚体（虚末麟/kirin）Boss。碰撞箱按源模组比例（4.0×8.0），地面近战 + 传送 + orb。
-     */
-    public static final RegistryObject<EntityType<net.minecraft.client.yiz.xian.entity.TaxutiEntity>> TAXUTI =
-        ENTITY_TYPES.register("taxuti", () -> EntityType.Builder.of(
-            (EntityType<net.minecraft.client.yiz.xian.entity.TaxutiEntity> type,
-             net.minecraft.world.level.Level level) ->
-                new net.minecraft.client.yiz.xian.entity.TaxutiEntity(type, level),
-            MobCategory.MONSTER)
-            .sized(4.0f, 8.0f)
-            .fireImmune()
-            .build("taxuti"));
-
-    /** 踏虚体 orb 球技能弹道（无渲染器，vanilla 粒子显示）。 */
-    public static final RegistryObject<EntityType<net.minecraft.client.yiz.xian.entity.skill.TaxutiOrbEntity>> TAXUTI_ORB =
-        ENTITY_TYPES.register("taxuti_orb", () -> EntityType.Builder.of(
-            (EntityType<net.minecraft.client.yiz.xian.entity.skill.TaxutiOrbEntity> type,
-             net.minecraft.world.level.Level level) ->
-                new net.minecraft.client.yiz.xian.entity.skill.TaxutiOrbEntity(type, level),
-            MobCategory.MISC)
-            .sized(1.0f, 1.0f)
-            .build("taxuti_orb"));
+            .sized(1.0f, 2.7f)
+            .build("tiedoushi"));
 }

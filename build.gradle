@@ -155,9 +155,6 @@ dependencies {
     // 前置库 yizmodqzk 依赖（mavenLocal 发布，fg.deobf 把 SRG jar 反映射成 official 供开发环境使用）
     implementation fg.deobf("net.minecraft.client.yiz:yizmodqzk:1.0")
 
-    // GeckoLib 动画库（4.8.4，已本地安装到 mavenLocal；dl.geckolib.com 被阻断只能走本地）
-    implementation fg.deobf("software.bernie.geckolib:geckolib-forge-1.20.1:4.8.4")
-
     // Example mod dependency with JEI - using fg.deobf() ensures the dependency is remapped to your development mappings
     // The JEI API is declared for compile time use, while the full JEI artifact is used at runtime
     // compileOnly fg.deobf("mezz.jei:jei-${mc_version}-common-api:${jei_version}")

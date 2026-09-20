@@ -1307,7 +1307,10 @@ public abstract class YizxianMob extends Mob implements PoshiBearer,
             .registryOrThrow(net.minecraft.core.registries.Registries.DAMAGE_TYPE)
             .getKey(type);
         if (key == null || !key.getNamespace().equals("minecraft")) return false;
-        float limited = Math.min(amount, conductionCap());
+        // 5 层减伤：原版护甲 + 通用/法术防御指数 + 全伤害减免 + 格挡
+        // （自管 hurt 不走 vanilla 链，需显式补，否则这些属性对传导伤害无效）
+        float reduced = net.minecraft.client.yiz.tool.health.DamageReductionChain.apply(this, source, amount);
+        float limited = Math.min(reduced, conductionCap());
         if (limited <= 0) return false;
         float current = net.minecraft.client.yiz.tool.health.SecureHealthClosure.getHealth(this);
         float next = Math.max(0, current - limited);

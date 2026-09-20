@@ -35,17 +35,7 @@ public class YizxianMod {
         ITEMS.register("quanshouzhe_spawn_egg", () ->
             new net.minecraft.client.yiz.xian.item.QuanshouzheSpawnEggItem(new Item.Properties()));
 
-    /** 邪狱龙生物蛋（踏虚体邪狱龙，GeckoLib 动画 Boss）。 */
-    public static final RegistryObject<Item> XIEYULONG_SPAWN_EGG =
-        ITEMS.register("xieyulong_spawn_egg", () ->
-            new net.minecraft.client.yiz.xian.item.XieyulongSpawnEggItem(new Item.Properties()));
-
-    /** 踏虚体生物蛋（GeckoLib 动画 Boss）。 */
-    public static final RegistryObject<Item> TAXUTI_SPAWN_EGG =
-        ITEMS.register("taxuti_spawn_egg", () ->
-            new net.minecraft.client.yiz.xian.item.TaxutiSpawnEggItem(new Item.Properties()));
-
-    // ── 自走棋星级生物蛋（辖界者=5费档 ×1/×2/×6；踏虚体/邪狱龙=7费档 ×1/×2.5/×9）──
+    // ── 自走棋星级生物蛋（辖界者=5费档 ×1/×2/×6）──
     // 每实体 3 星级蛋，物品描边 OutlineMarker：1星=level0白 / 2星=level4蓝 / 3星=level6金
 
     public static final RegistryObject<Item> QUANSHOUZHE_STAR1 =
@@ -58,25 +48,15 @@ public class YizxianMod {
         ITEMS.register("quanshouzhe_spawn_egg_star3", () ->
             new net.minecraft.client.yiz.xian.item.ChessSpawnEggItem(new Item.Properties(), YizxianEntityTypes.QUANSHOUZHE, 5, 3));
 
-    public static final RegistryObject<Item> XIEYULONG_STAR1 =
-        ITEMS.register("xieyulong_spawn_egg_star1", () ->
-            new net.minecraft.client.yiz.xian.item.ChessSpawnEggItem(new Item.Properties(), YizxianEntityTypes.XIEYULONG, 7, 1));
-    public static final RegistryObject<Item> XIEYULONG_STAR2 =
-        ITEMS.register("xieyulong_spawn_egg_star2", () ->
-            new net.minecraft.client.yiz.xian.item.ChessSpawnEggItem(new Item.Properties(), YizxianEntityTypes.XIEYULONG, 7, 2));
-    public static final RegistryObject<Item> XIEYULONG_STAR3 =
-        ITEMS.register("xieyulong_spawn_egg_star3", () ->
-            new net.minecraft.client.yiz.xian.item.ChessSpawnEggItem(new Item.Properties(), YizxianEntityTypes.XIEYULONG, 7, 3));
-
-    public static final RegistryObject<Item> TAXUTI_STAR1 =
-        ITEMS.register("taxuti_spawn_egg_star1", () ->
-            new net.minecraft.client.yiz.xian.item.ChessSpawnEggItem(new Item.Properties(), YizxianEntityTypes.TAXUTI, 7, 1));
-    public static final RegistryObject<Item> TAXUTI_STAR2 =
-        ITEMS.register("taxuti_spawn_egg_star2", () ->
-            new net.minecraft.client.yiz.xian.item.ChessSpawnEggItem(new Item.Properties(), YizxianEntityTypes.TAXUTI, 7, 2));
-    public static final RegistryObject<Item> TAXUTI_STAR3 =
-        ITEMS.register("taxuti_spawn_egg_star3", () ->
-            new net.minecraft.client.yiz.xian.item.ChessSpawnEggItem(new Item.Properties(), YizxianEntityTypes.TAXUTI, 7, 3));
+    public static final RegistryObject<Item> TIEDOUSHI_STAR1 =
+        ITEMS.register("tiedoushi_spawn_egg_star1", () ->
+            new net.minecraft.client.yiz.xian.item.ChessSpawnEggItem(new Item.Properties(), YizxianEntityTypes.TIEDOUSHI, 3, 1));
+    public static final RegistryObject<Item> TIEDOUSHI_STAR2 =
+        ITEMS.register("tiedoushi_spawn_egg_star2", () ->
+            new net.minecraft.client.yiz.xian.item.ChessSpawnEggItem(new Item.Properties(), YizxianEntityTypes.TIEDOUSHI, 3, 2));
+    public static final RegistryObject<Item> TIEDOUSHI_STAR3 =
+        ITEMS.register("tiedoushi_spawn_egg_star3", () ->
+            new net.minecraft.client.yiz.xian.item.ChessSpawnEggItem(new Item.Properties(), YizxianEntityTypes.TIEDOUSHI, 3, 3));
 
     // ── 辅助物品 ──────────────────────────────────────────────
 
@@ -109,19 +89,14 @@ public class YizxianMod {
                 .icon(() -> new net.minecraft.world.item.ItemStack(QUANSHOUZHE_SPAWN_EGG.get()))
                 .displayItems((params, output) -> {
                     output.accept(QUANSHOUZHE_SPAWN_EGG.get());
-                    output.accept(XIEYULONG_SPAWN_EGG.get());
-                    output.accept(TAXUTI_SPAWN_EGG.get());
                     output.accept(ENTITY_ATTRIBUTE_EDITOR.get());
                     // 自走棋星级蛋（带描边 NBT 白/蓝/金）
                     output.accept(starEggStack(QUANSHOUZHE_STAR1.get()));
                     output.accept(starEggStack(QUANSHOUZHE_STAR2.get()));
                     output.accept(starEggStack(QUANSHOUZHE_STAR3.get()));
-                    output.accept(starEggStack(XIEYULONG_STAR1.get()));
-                    output.accept(starEggStack(XIEYULONG_STAR2.get()));
-                    output.accept(starEggStack(XIEYULONG_STAR3.get()));
-                    output.accept(starEggStack(TAXUTI_STAR1.get()));
-                    output.accept(starEggStack(TAXUTI_STAR2.get()));
-                    output.accept(starEggStack(TAXUTI_STAR3.get()));
+                    output.accept(starEggStack(TIEDOUSHI_STAR1.get()));
+                    output.accept(starEggStack(TIEDOUSHI_STAR2.get()));
+                    output.accept(starEggStack(TIEDOUSHI_STAR3.get()));
                 })
                 .build());
 
@@ -157,16 +132,10 @@ public class YizxianMod {
                 net.minecraft.client.yiz.xian.entity.QuanshouzheEntity.createAttributes().build());
         });
 
-        // 实体属性创建（邪狱龙 AttributeSupplier）
+        // 实体属性创建（铁斗士 AttributeSupplier）
         modEventBus.addListener((net.minecraftforge.event.entity.EntityAttributeCreationEvent e) -> {
-            e.put(YizxianEntityTypes.XIEYULONG.get(),
-                net.minecraft.client.yiz.xian.entity.XieyulongEntity.createAttributes().build());
-        });
-
-        // 实体属性创建（踏虚体 AttributeSupplier）
-        modEventBus.addListener((net.minecraftforge.event.entity.EntityAttributeCreationEvent e) -> {
-            e.put(YizxianEntityTypes.TAXUTI.get(),
-                net.minecraft.client.yiz.xian.entity.TaxutiEntity.createAttributes().build());
+            e.put(YizxianEntityTypes.TIEDOUSHI.get(),
+                net.minecraft.client.yiz.xian.entity.TiedoushiEntity.createAttributes().build());
         });
 
         // 给玩家默认属性加涨跌多空（FIRST_DREAM/long_short，默认 0）：否则物品修饰符作用在玩家上时

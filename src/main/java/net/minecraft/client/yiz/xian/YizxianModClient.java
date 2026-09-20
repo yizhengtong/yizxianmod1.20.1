@@ -50,30 +50,16 @@ public class YizxianModClient {
             net.minecraft.client.yiz.xian.entity.registry.YizxianEntityTypes.QUANSHOUZHE.get(),
             QuanshouzheRenderer::new);
         event.registerEntityRenderer(
-            net.minecraft.client.yiz.xian.entity.registry.YizxianEntityTypes.XIEYULONG.get(),
-            net.minecraft.client.yiz.xian.client.renderer.XieyulongRenderer::new);
-        // 三技能弹道：空渲染器（本体不可见，靠 vanilla 粒子显示）
-        event.registerEntityRenderer(
-            net.minecraft.client.yiz.xian.entity.registry.YizxianEntityTypes.XIEYULONG_FIRE.get(),
-            net.minecraft.client.yiz.xian.client.renderer.FireballEntityRenderer::new);
-        event.registerEntityRenderer(
-            net.minecraft.client.yiz.xian.entity.registry.YizxianEntityTypes.XIEYULONG_METEOR.get(),
-            net.minecraft.client.yiz.xian.client.renderer.FireballEntityRenderer::new);
-        event.registerEntityRenderer(
-            net.minecraft.client.yiz.xian.entity.registry.YizxianEntityTypes.XIEYULONG_POISON_CLOUD.get(),
-            net.minecraft.client.yiz.xian.client.renderer.NoopEntityRenderer::new);
-        // 踏虚体 + orb 弹道
-        event.registerEntityRenderer(
-            net.minecraft.client.yiz.xian.entity.registry.YizxianEntityTypes.TAXUTI.get(),
-            net.minecraft.client.yiz.xian.client.renderer.TaxutiRenderer::new);
-        event.registerEntityRenderer(
-            net.minecraft.client.yiz.xian.entity.registry.YizxianEntityTypes.TAXUTI_ORB.get(),
-            net.minecraft.client.yiz.xian.client.renderer.NoopEntityRenderer::new);
+            net.minecraft.client.yiz.xian.entity.registry.YizxianEntityTypes.TIEDOUSHI.get(),
+            net.minecraft.client.yiz.xian.client.renderer.TiedoushiRenderer::new);
     }
 
     @SubscribeEvent
     public static void onRegisterLayerDefinitions(EntityRenderersEvent.RegisterLayerDefinitions event) {
         event.registerLayerDefinition(QuanshouzheRenderer.LAYER,
             net.minecraft.client.yiz.xian.client.model.QuanshouzheModel::createBodyLayer);
+        event.registerLayerDefinition(
+            net.minecraft.client.yiz.xian.client.renderer.TiedoushiRenderer.LAYER,
+            net.minecraft.client.yiz.xian.client.model.TiedoushiModel::createBodyLayer);
     }
 }
