@@ -139,15 +139,19 @@ public class TiedoushiModel<T extends TiedoushiEntity> extends HierarchicalModel
         this.animate(entity.walkState, TiedoushiAnimations.WALK, ageInTicks, ANIM_SPEED);
         this.animate(entity.chaseState, TiedoushiAnimations.CHASE, ageInTicks, ANIM_SPEED);
 
+        // 攻击/技能动画随"怒击"层数同步提速（与 TiedoushiEntity.getAttackInterval 的间隔缩放同倍率，
+        // 否则间隔缩短后动画会被下一套截断）；待机/行走/追击保持基础倍率，避免走路动画无故加速。
+        float attackSpeed = ANIM_SPEED * (1.0F + 0.04F * entity.getRageStacks());
+
         // 攻击：整套三段连贯动画，播完即停
         if (entity.attackState.isStarted()) {
-            this.animate(entity.attackState, TiedoushiAnimations.ATTACK, ageInTicks, ANIM_SPEED);
+            this.animate(entity.attackState, TiedoushiAnimations.ATTACK, ageInTicks, attackSpeed);
             stopWhenDone(entity.attackState, TiedoushiAnimations.ATTACK.lengthInSeconds() * 1000.0F + 60.0F);
         }
 
         // 技能
         if (entity.skillState.isStarted()) {
-            this.animate(entity.skillState, TiedoushiAnimations.SKILL_1, ageInTicks, ANIM_SPEED);
+            this.animate(entity.skillState, TiedoushiAnimations.SKILL_1, ageInTicks, attackSpeed);
             stopWhenDone(entity.skillState, TiedoushiAnimations.SKILL_1.lengthInSeconds() * 1000.0F + 60.0F);
         }
     }

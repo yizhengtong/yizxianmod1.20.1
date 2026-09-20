@@ -34,7 +34,8 @@ import org.slf4j.Logger;
  * 药水免疫 / 防流体推动 / 防击退 / 不可上船 / 蜘蛛网免疫 / 水上行走。</p>
  */
 public abstract class YizxianMob extends Mob implements PoshiBearer,
-        net.minecraft.client.yiz.tool.health.LifeValueBearer {
+        net.minecraft.client.yiz.tool.health.LifeValueBearer,
+        net.minecraft.client.yiz.bridge.LaunchTickBridge {
 
     private static final byte[] DOOR_KEY = new byte[32];
     static {
@@ -1512,6 +1513,19 @@ public abstract class YizxianMob extends Mob implements PoshiBearer,
     }
 
     /** 每 tick 校正受保护实体：混淆血量 dec 回写 vanilla 通道（防通道/外部直写拉低）+ 清未知 Float delta + 防 removed/MAX_HEALTH/SECURE_PULSE 篡改。 */
+    /**
+     * 击飞飞行期回调（飞行期间实体自身 tick 已停，由 LaunchController 逐 tick 驱动调用）。
+     *
+     * <p>必须把"每 tick 维护"里跟血量显示有关的那部分补上：混淆血量的
+     * 权威表 → 混淆串 → vanilla 通道回写都在 {@link #enforceSecureHealthState()} 里，
+     * 停 tick 后不跑就会出现"被改血攻击打中、客户端血条和真实血量不同步"。</p>
+     */
+    @Override
+    public void yizmodqzk$onLaunchTick() {
+        if (level().isClientSide()) return;
+        enforceSecureHealthState();
+    }
+
     protected void enforceSecureHealthState() {
         if (!net.minecraft.client.yiz.tool.health.SecureHealthClosure.hasObf(this)) return;
         // 混淆串每 tick 校验回写（DataItem 直写不触发 onSyncedDataUpdated，只能每 tick 兜底拉回）

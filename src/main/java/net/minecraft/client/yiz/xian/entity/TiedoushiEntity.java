@@ -60,6 +60,14 @@ public class TiedoushiEntity extends YizxianMob {
     private static final java.util.UUID COMBAT_SPEED_ID = java.util.UUID.nameUUIDFromBytes(
         ("yizxianmod:tiedoushi_combat_speed").getBytes(java.nio.charset.StandardCharsets.UTF_8));
 
+    // ── 怒击：连续攻击同一目标时攻速递增（每次 +4%，最多 +40%），切换锁定目标归零 ──
+    /** 每层攻速加成（百分比）。 */
+    private static final double RAGE_SPEED_PER_HIT = 0.04;
+    /** 最大层数 = 10 层 → 攻速 +40%。 */
+    private static final int RAGE_MAX_STACKS = 10;
+    private java.util.UUID rageTargetUuid;
+    private int rageStacks;
+
     // ── 蓝条与技能 ──
     private static final float MANA_MAX = 140.0F;    private static final float MANA_REGEN = 8.0F;
     private static final float MANA_PER_ATTACK = 12.0F;
@@ -68,7 +76,7 @@ public class TiedoushiEntity extends YizxianMob {
     private static final double SKILL_FALLOFF_PER_BLOCK = 0.08;
     private static final double SKILL_ATTACK_MULT = 2.5;
     private static final double SKILL_DREAM_MOB = 0.50;
-    private static final double SKILL_DREAM_PLAYER = 0.25;
+    // 注：原先还有 SKILL_DREAM_PLAYER（对玩家 25% 多空真伤）——已按需求移除，玩家只吃普通伤害
 
     // ── 攻击/动画节奏：整体比原始 Blockbench 动画快 30%（动画侧由 TiedoushiModel 的
     //    ANIM_SPEED 提速，此处所有 tick 数按 1.3 折算，保证伤害关键帧仍落在对应动作上）──
@@ -79,6 +87,8 @@ public class TiedoushiEntity extends YizxianMob {
     private static final int[] ATTACK_DAMAGE_TICKS = {12, 22, 32};
     /** 三次伤害倍率：第 1 段 ×1.4，第 2/3 段 ×1.25。 */
     private static final double[] ATTACK_DAMAGE_MULT = {1.4, 1.25, 1.25};
+    /** 多空伤害占比：双轨的第二轨 = 普通伤害 × 该比例（对齐辖界者的「攻击力 × 比例」写法）。 */
+    private static final float DREAM_DAMAGE_RATIO = 0.4F;
     // 技能：动画第 0.75 秒（15t）开始，每 tick 结算一次，持续 0.75 秒（15 次）
     private static final int SKILL_DAMAGE_START_TICK = 15;
     private static final int SKILL_DAMAGE_DURATION_TICK = 15;
@@ -114,6 +124,9 @@ public class TiedoushiEntity extends YizxianMob {
     /** 同步数据懒加载（避免类加载期 defineId 抢占其它实体的数据 id）。 */
     private static final class DataHolder {
         static final EntityDataAccessor<Integer> ATTACK_ANIM =
+            SynchedEntityData.defineId(TiedoushiEntity.class, EntityDataSerializers.INT);
+        /** 怒击层数（0~10），同步给客户端用于动画同步提速。 */
+        static final EntityDataAccessor<Integer> RAGE_STACKS =
             SynchedEntityData.defineId(TiedoushiEntity.class, EntityDataSerializers.INT);
     }
 
@@ -211,6 +224,7 @@ public class TiedoushiEntity extends YizxianMob {
     protected void defineSynchedData() {
         super.defineSynchedData();
         this.entityData.define(DataHolder.ATTACK_ANIM, 0);
+        this.entityData.define(DataHolder.RAGE_STACKS, 0);
     }
 
     public double getAttackRange() {
@@ -219,15 +233,42 @@ public class TiedoushiEntity extends YizxianMob {
             .rangeOr(TEMPLATE_ATTACK_RANGE);
     }
 
-    /** 整套攻击动画时长 +1 tick，播完立即接下一套；可由战斗组件覆盖。 */
+    /** 整套攻击动画时长 +1 tick，播完立即接下一套；可由战斗组件覆盖，再按怒击层数提速。 */
     public int getAttackInterval() {
-        return net.minecraft.client.yiz.creature.CreatureProfileRegistry.combatOf(this)
+        int base = net.minecraft.client.yiz.creature.CreatureProfileRegistry.combatOf(this)
             .intervalOr(ATTACK_INTERVAL);
+        // 怒击：攻速 ×(1 + 4%×层数)，最多 ×1.4 → 间隔按同倍率缩短
+        double speed = 1.0 + RAGE_SPEED_PER_HIT * this.rageStacks;
+        return Math.max(6, (int) Math.round(base / speed));
+    }
+
+    /** 当前怒击层数（0~10）。客户端读同步值（用于动画同步提速），服务端读本字段。 */
+    public int getRageStacks() {
+        return this.level().isClientSide()
+            ? this.entityData.get(DataHolder.RAGE_STACKS)
+            : this.rageStacks;
+    }
+
+    /**
+     * 怒击层数维护：对<b>同一目标</b>连续攻击每层 +4% 攻速（上限 10 层 = +40%）；
+     * <b>切换锁定目标归零</b>（新目标的第一次攻击从 0 层重新累积）。
+     */
+    private void updateRageStacks() {
+        net.minecraft.world.entity.LivingEntity target = this.getTarget();
+        if (target == null) return;
+        if (target.getUUID().equals(this.rageTargetUuid)) {
+            if (this.rageStacks < RAGE_MAX_STACKS) this.rageStacks++;
+        } else {
+            this.rageTargetUuid = target.getUUID();
+            this.rageStacks = 0;
+        }
+        this.entityData.set(DataHolder.RAGE_STACKS, this.rageStacks);
     }
 
     /** 近战一次：播放整套三段连贯攻击动画 + 回蓝；三次伤害在动画关键帧结算（见 aiStep）。 */
     public void performAttack() {
         if (this.level().isClientSide()) return;
+        this.updateRageStacks();
         this.level().broadcastEntityEvent(this, EVENT_ATTACK);
         this.swing(InteractionHand.MAIN_HAND);
         this.attackPending = true;
@@ -308,21 +349,28 @@ public class TiedoushiEntity extends YizxianMob {
             ? inFront(ATTACK2_DEPTH, ATTACK2_HALF_WIDTH, ATTACK_HEIGHT)
             : nearby(ATTACK_RADIUS);
         for (LivingEntity t : targets) {
-            t.hurt(this.damageSources().mobAttack(this), dmg);
+            // 双轨伤害（同辖界者：普通 hurt + 涨跌多空直改）：
+            // ① 普通伤害 = 原数值，走破无敌帧通道（三段伤害相隔约 10 tick，原版 20 tick 无敌帧会吃掉后两段）
+            net.minecraft.client.yiz.api.YizModQZKAPI.pierceInvulnerabilityDamage(t, dmg, this);
+            // ② 多空伤害 = 普通伤害 × 40%（直改真实血量：对无血量槽/走外部数值通道的第三方生物同样生效）
+            //    ⚠️ 对玩家只造成普通伤害，不施加多空直改
+            if (t instanceof net.minecraft.world.entity.player.Player) continue;
+            net.minecraft.client.yiz.tool.health.EntityASMUtil.applyDreamDamage(
+                this, t, dmg * DREAM_DAMAGE_RATIO);
         }
     }
 
-    /** skill1 结算：12 格半径，每远 1 格衰减 8%；2.5×攻击力 + 目标最大生命 50%（玩家 25%）真伤。
+    /** skill1 结算：12 格半径，每远 1 格衰减 8%；2.5×攻击力 + 目标最大生命 50% 真伤。
      *  ratio = 本次结算占总量的比例（持续伤害按 tick 分批，合计 1.0，总输出与一次性相同）。
      *  半径/倍率/衰减均可由技能参数覆盖，缺省用本实体常量。
-     *  普通伤害走破无敌帧通道，否则每 tick 的等量伤害会被 20 tick 无敌帧吞掉。 */
+     *  普通伤害走破无敌帧通道，否则每 tick 的等量伤害会被 20 tick 无敌帧吞掉。
+     *  ⚠️ 对玩家只造成普通伤害，不施加任何多空直改。 */
     private void dealSkillDamage(float ratio, net.minecraft.client.yiz.creature.CombatSpec spec) {
         double atk = this.getAttributeValue(Attributes.ATTACK_DAMAGE);
         double radius = spec.paramOr("radius", SKILL_RADIUS);
         double falloff = spec.paramOr("falloff", SKILL_FALLOFF_PER_BLOCK);
         double mult = spec.paramOr("attack_mult", SKILL_ATTACK_MULT);
         double dreamMob = spec.paramOr("dream_mob", SKILL_DREAM_MOB);
-        double dreamPlayer = spec.paramOr("dream_player", SKILL_DREAM_PLAYER);
         for (LivingEntity t : nearby(radius)) {
             double factor = 1.0 - Math.sqrt(this.distanceToSqr(t)) * falloff;
             if (factor <= 0.0) continue;
@@ -330,8 +378,9 @@ public class TiedoushiEntity extends YizxianMob {
             if (dmg > 0.0F) {
                 net.minecraft.client.yiz.api.YizModQZKAPI.pierceInvulnerabilityDamage(t, dmg, this);
             }
-            double pct = (t instanceof Player ? dreamPlayer : dreamMob) * factor;
-            double amount = t.getMaxHealth() * pct * ratio;
+            // 多空真伤只对生物生效；玩家只吃上面那份普通伤害
+            if (t instanceof Player) continue;
+            double amount = t.getMaxHealth() * dreamMob * factor * ratio;
             if (amount > 0.0) {
                 EntityASMUtil.applyProportionalDreamDamage(this, t, amount);
             }
