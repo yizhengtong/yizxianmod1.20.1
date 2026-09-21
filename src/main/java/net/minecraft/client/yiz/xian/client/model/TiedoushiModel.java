@@ -126,12 +126,17 @@ public class TiedoushiModel<T extends TiedoushiEntity> extends HierarchicalModel
         this.head.yRot = netHeadYaw * Mth.DEG_TO_RAD;
         this.head.xRot = headPitch * Mth.DEG_TO_RAD;
 
-        // 待机/行走/追击：三条互斥的循环动画（用 walkAnimation 的稳定移动标志，避免渲染帧抖动导致状态反复重启）
-        // 只有存在目标时才播行走/追击：铁斗士是棋子，没有游荡 AI，无目标时即便被攻击击退推着走，
-        // 也应保持原地静止的待机动画（walkAnimation 会因被动位移而被判定为"在走"）。
-        boolean hasTarget = entity.getTarget() != null && entity.getTarget().isAlive();
-        boolean moving = entity.walkAnimation.isMoving() && hasTarget;
-        boolean chasing = moving && entity.getTarget() != null;
+        // 待机/行走/追击：三条互斥的循环动画。
+        // ⚠️ 档位来自服务端同步的 LOCOMOTION —— 原版 Mob.getTarget() **不进同步通道**
+        // （Mob 只有 DATA_MOB_FLAGS_ID 一个通道，setTarget 只给普通字段赋值），客户端读到的 target
+        // 恒为 null；此前这里用 entity.getTarget() != null 当条件 ⇒ 客户端永远判定"没目标"，
+        // 于是追击时一直播待机动画（看起来就是"移动不播动画"）。
+        byte locomotion = entity.getLocomotionState();
+        boolean chasing = locomotion == TiedoushiEntity.LOCOMOTION_CHASE;
+        // 兜底：服务端档位是待机、但实体确实在位移（掉包 / 服务端没跑起来 / 被外力推）→ 仍播行走，
+        // 避免"在动但没有任何动画"；档位为追击时不看位移（拉近过程中被挡住也应保持追击姿态）。
+        boolean moving = chasing || locomotion == TiedoushiEntity.LOCOMOTION_WALK
+            || entity.walkAnimation.isMoving();
         entity.idleState.animateWhen(!moving, entity.tickCount);
         entity.walkState.animateWhen(moving && !chasing, entity.tickCount);
         entity.chaseState.animateWhen(chasing, entity.tickCount);

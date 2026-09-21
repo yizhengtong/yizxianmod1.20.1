@@ -128,6 +128,33 @@ public class TiedoushiEntity extends YizxianMob {
         /** 怒击层数（0~10），同步给客户端用于动画同步提速。 */
         static final EntityDataAccessor<Integer> RAGE_STACKS =
             SynchedEntityData.defineId(TiedoushiEntity.class, EntityDataSerializers.INT);
+        /**
+         * 位移档位（见 {@link #LOCOMOTION_IDLE}/{@link #LOCOMOTION_WALK}/{@link #LOCOMOTION_CHASE}）。
+         *
+         * <p>⚠️ 必须由服务端同步：原版 {@code Mob.getTarget()} <b>不进同步通道</b>
+         * （{@code Mob} 只有 {@code DATA_MOB_FLAGS_ID} 一个通道，{@code setTarget} 只是给普通字段赋值），
+         * 客户端读到的 target 恒为 null。客户端模型曾用 {@code entity.getTarget() != null} 决定播不播
+         * 行走/追击动画 ⇒ 该条件在客户端永远为假 ⇒ 铁斗士一边追击一边放待机动画（看起来"移动不播动画"）。
+         * 档位由服务端按「有没有目标 + 有没有真的在位移 + 是否还在攻击距离外」判定，客户端只负责渲染。</p>
+         */
+        static final EntityDataAccessor<Byte> LOCOMOTION =
+            SynchedEntityData.defineId(TiedoushiEntity.class, EntityDataSerializers.BYTE);
+    }
+
+    /** 位移档位：静止（无目标 / 未实际位移）。 */
+    public static final byte LOCOMOTION_IDLE = 0;
+    /** 位移档位：行走（已进入攻击距离，含攻击中边打边压上）。 */
+    public static final byte LOCOMOTION_WALK = 1;
+    /** 位移档位：追击（目标在攻击距离外，正在拉近）。 */
+    public static final byte LOCOMOTION_CHASE = 2;
+
+    /** 当前位移档位（客户端渲染读这个，别读 getTarget()）。 */
+    public byte getLocomotionState() {
+        try {
+            return this.entityData.get(DataHolder.LOCOMOTION);
+        } catch (Throwable t) {
+            return LOCOMOTION_IDLE;
+        }
     }
 
     public TiedoushiEntity(EntityType<? extends Mob> type, Level level) {
@@ -225,6 +252,26 @@ public class TiedoushiEntity extends YizxianMob {
         super.defineSynchedData();
         this.entityData.define(DataHolder.ATTACK_ANIM, 0);
         this.entityData.define(DataHolder.RAGE_STACKS, 0);
+        this.entityData.define(DataHolder.LOCOMOTION, LOCOMOTION_IDLE);
+    }
+
+    /**
+     * 服务端判定位移档位并同步（客户端动画分支用）。
+     *
+     * <p>「有没有在动」用 {@code walkAnimation.isMoving()} —— 它按<b>实际逐 tick 位移</b>算
+     * （{@code LivingEntity.updateWalkAnimation} 读的是 {@code getX()-xo} 那一套），
+     * 所以被挡住 / 原地挥空时不会误报成行走。</p>
+     */
+    private void updateLocomotionState() {
+        LivingEntity target = this.getTarget();
+        byte next = LOCOMOTION_IDLE;
+        if (target != null && target.isAlive() && this.walkAnimation.isMoving()) {
+            double range = this.getAttackRange();
+            next = (this.distanceToSqr(target) > range * range) ? LOCOMOTION_CHASE : LOCOMOTION_WALK;
+        }
+        if (this.entityData.get(DataHolder.LOCOMOTION) != next) {
+            this.entityData.set(DataHolder.LOCOMOTION, next);
+        }
     }
 
     public double getAttackRange() {
@@ -281,6 +328,9 @@ public class TiedoushiEntity extends YizxianMob {
     public void aiStep() {
         super.aiStep();
         if (this.level().isClientSide()) return;
+
+        // 位移档位（待机/行走/追击）由服务端判定并同步——客户端拿不到 getTarget()，见 DataHolder.LOCOMOTION
+        this.updateLocomotionState();
 
         // 出生属性/星级/满血已由基类 aiStep 一次跑完（applyEntityAttributes → registerSecureHealth
         // → applyChessStarIfNeeded）。此处不再重跑 applyVanillaDifficultyScale：那会把星级放大后的
