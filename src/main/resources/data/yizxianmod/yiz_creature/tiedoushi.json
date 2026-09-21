@@ -11,7 +11,7 @@
     "yizmodqzk:knockback_distance": 1.8,
     "yizmodqzk:knockback_time": 24.0
   },
-  "effects": [],
+  "effects": ["yizmodqzk:knockback_immunity"],
   "combat": {
     "attack_interval": 39,
     "attack_range": 3.0,

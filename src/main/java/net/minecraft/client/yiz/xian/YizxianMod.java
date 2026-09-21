@@ -159,6 +159,8 @@ public class YizxianMod {
         LOGGER.info("Yiz Xian Mod 1.20.1 初始化完成");
         // 注册生物技能（供战斗组件 skill_id 派发）
         net.minecraft.client.yiz.creature.CreatureSkills.register(new net.minecraft.client.yiz.xian.entity.TiedoushiEntity.Skill1());
+        // 铁斗士生物原型（代码轨默认值；数据包 data/yizxianmod/yiz_creature/tiedoushi.json 同 id 覆盖）
+        registerTiedoushiProfile();
         // 注册 SimpleChannel 网络
         net.minecraft.client.yiz.xian.network.NetworkHandler.register();
         // /yiz sx zddk <数值>：给主手物品添加涨跌多空属性修饰符（SimpleCommandRegistry 已由前置库订阅）
@@ -174,6 +176,30 @@ public class YizxianMod {
     @SubscribeEvent
     public void onServerStarting(ServerStartingEvent event) {
         LOGGER.debug("Yiz Xian Mod 服务端启动");
+    }
+
+    /**
+     * 铁斗士生物原型（代码轨）——目前只声明「免疫外部动量」。
+     *
+     * <p>{@code knockback_immunity} 由 {@code YizxianMob.motionGate()} 执行：它把
+     * {@code setDeltaMovement / addDeltaMovement / knockback} 三个速度入口按调用栈鉴权，
+     * <b>只拦外部模组的帧</b>（原版/forge/AI/本模组的写入照常放行，爆炸等外部强制力会被拒绝）。
+     * 效果开关经 {@code InstanceEffectState.isEffectEnabled} 判定，档位顺序：
+     * 实例补丁（指令/星级）→ 原型（本处 + 数据包覆盖）→ 类级基础效果。</p>
+     *
+     * <p>注：代码轨不会被数据包清除，数据包同 id 会整体覆盖这份原型（含 effects 列表），
+     * 所以 {@code tiedoushi.json} 里也同步写了同一条效果，两边保持一致。</p>
+     */
+    private static void registerTiedoushiProfile() {
+        net.minecraft.resources.ResourceLocation id =
+            new net.minecraft.resources.ResourceLocation("yizxianmod", "tiedoushi");
+        net.minecraft.client.yiz.creature.CreatureProfile profile =
+            net.minecraft.client.yiz.creature.CreatureProfile.builder(id)
+                .component(net.minecraft.client.yiz.creature.CreatureComponents.KNOCKBACK_IMMUNITY, Boolean.TRUE)
+                .build();
+        net.minecraft.client.yiz.creature.CreatureProfileRegistry.register(profile);
+        net.minecraft.client.yiz.creature.CreatureProfileRegistry.bindClass(
+            net.minecraft.client.yiz.xian.entity.TiedoushiEntity.class, id);
     }
 
     //  范围溅射系统（1.21.1 移植：SPLASH_RADIUS/DAMAGE/FALLOFF 属性驱动）
