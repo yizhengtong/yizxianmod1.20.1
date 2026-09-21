@@ -52,6 +52,9 @@ public class YizxianModClient {
         event.registerEntityRenderer(
             net.minecraft.client.yiz.xian.entity.registry.YizxianEntityTypes.TIEDOUSHI.get(),
             net.minecraft.client.yiz.xian.client.renderer.TiedoushiRenderer::new);
+        event.registerEntityRenderer(
+            net.minecraft.client.yiz.xian.entity.registry.YizxianEntityTypes.NUYI.get(),
+            net.minecraft.client.yiz.xian.client.renderer.NuyiRenderer::new);
     }
 
     @SubscribeEvent
@@ -61,5 +64,8 @@ public class YizxianModClient {
         event.registerLayerDefinition(
             net.minecraft.client.yiz.xian.client.renderer.TiedoushiRenderer.LAYER,
             net.minecraft.client.yiz.xian.client.model.TiedoushiModel::createBodyLayer);
+        event.registerLayerDefinition(
+            net.minecraft.client.yiz.xian.client.renderer.NuyiRenderer.LAYER,
+            net.minecraft.client.yiz.xian.client.model.NuyiModel::createBodyLayer);
     }
 }

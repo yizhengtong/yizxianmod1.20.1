@@ -58,6 +58,17 @@ public class YizxianMod {
         ITEMS.register("tiedoushi_spawn_egg_star3", () ->
             new net.minecraft.client.yiz.xian.item.ChessSpawnEggItem(new Item.Properties(), YizxianEntityTypes.TIEDOUSHI, 3, 3));
 
+    // ── 怒翼（幻翼类飞行棋子，一费档）──
+    public static final RegistryObject<Item> NUYI_STAR1 =
+        ITEMS.register("nuyi_spawn_egg_star1", () ->
+            new net.minecraft.client.yiz.xian.item.ChessSpawnEggItem(new Item.Properties(), YizxianEntityTypes.NUYI, 1, 1));
+    public static final RegistryObject<Item> NUYI_STAR2 =
+        ITEMS.register("nuyi_spawn_egg_star2", () ->
+            new net.minecraft.client.yiz.xian.item.ChessSpawnEggItem(new Item.Properties(), YizxianEntityTypes.NUYI, 1, 2));
+    public static final RegistryObject<Item> NUYI_STAR3 =
+        ITEMS.register("nuyi_spawn_egg_star3", () ->
+            new net.minecraft.client.yiz.xian.item.ChessSpawnEggItem(new Item.Properties(), YizxianEntityTypes.NUYI, 1, 3));
+
     // ── 辅助物品 ──────────────────────────────────────────────
 
     /** 光明末影之眼：手持时给周围末地传送门框画穿墙发光轮廓。 */
@@ -97,6 +108,9 @@ public class YizxianMod {
                     output.accept(starEggStack(TIEDOUSHI_STAR1.get()));
                     output.accept(starEggStack(TIEDOUSHI_STAR2.get()));
                     output.accept(starEggStack(TIEDOUSHI_STAR3.get()));
+                    output.accept(starEggStack(NUYI_STAR1.get()));
+                    output.accept(starEggStack(NUYI_STAR2.get()));
+                    output.accept(starEggStack(NUYI_STAR3.get()));
                 })
                 .build());
 
@@ -136,6 +150,12 @@ public class YizxianMod {
         modEventBus.addListener((net.minecraftforge.event.entity.EntityAttributeCreationEvent e) -> {
             e.put(YizxianEntityTypes.TIEDOUSHI.get(),
                 net.minecraft.client.yiz.xian.entity.TiedoushiEntity.createAttributes().build());
+        });
+
+        // 实体属性创建（怒翼 AttributeSupplier）
+        modEventBus.addListener((net.minecraftforge.event.entity.EntityAttributeCreationEvent e) -> {
+            e.put(YizxianEntityTypes.NUYI.get(),
+                net.minecraft.client.yiz.xian.entity.NuyiEntity.createAttributes().build());
         });
 
         // 给玩家默认属性加涨跌多空（FIRST_DREAM/long_short，默认 0）：否则物品修饰符作用在玩家上时

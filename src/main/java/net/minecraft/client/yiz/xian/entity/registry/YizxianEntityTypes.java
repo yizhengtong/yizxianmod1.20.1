@@ -41,4 +41,18 @@ public final class YizxianEntityTypes {
             MobCategory.MISC)
             .sized(1.0f, 2.7f)
             .build("tiedoushi"));
+
+    /**
+     * 怒翼（一费棋子）。碰撞箱照原版幻翼（0.9×0.5）：飞行单位的碰撞箱只围躯干，
+     * 翼展（±1.3 格）按原版惯例不进碰撞箱；俯冲判定的 {@code inflate(0.2)} 与原版一致。
+     */
+    public static final RegistryObject<EntityType<net.minecraft.client.yiz.xian.entity.NuyiEntity>> NUYI =
+        ENTITY_TYPES.register("nuyi", () -> EntityType.Builder.of(
+            (EntityType<net.minecraft.client.yiz.xian.entity.NuyiEntity> type,
+             net.minecraft.world.level.Level level) ->
+                new net.minecraft.client.yiz.xian.entity.NuyiEntity(type, level),
+            MobCategory.MISC)
+            .sized(0.9f, 0.5f)
+            .clientTrackingRange(8)
+            .build("nuyi"));
 }
