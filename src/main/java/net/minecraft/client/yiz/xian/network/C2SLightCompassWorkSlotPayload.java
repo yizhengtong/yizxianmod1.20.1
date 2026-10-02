@@ -9,7 +9,7 @@ import net.minecraftforge.network.NetworkEvent;
 import java.util.function.Supplier;
 
 /**
- * C2S: 光明指南针工作槽操作（1.20.1 移植版）。
+ * C2S: 光明指南针工作槽操作。
  *
  * 工作槽是「只进不出」的自定义槽，客户端无法通过原版 slot 点击修改它（mayPickup/mayPlace=false +
  * Menu.clicked 拦截）。展示栏点击放入 / 左键移除都走本包，由服务端在 player.containerMenu 上改 workContainer，

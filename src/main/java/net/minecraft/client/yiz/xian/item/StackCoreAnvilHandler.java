@@ -11,7 +11,7 @@ import net.minecraftforge.event.entity.player.AnvilRepairEvent;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
 
 /**
- * 堆叠核心的铁砧强化处理（1.20.1 移植版）。
+ * 堆叠核心的铁砧强化处理。
  *
  * <p>交互：铁砧<b>左槽</b>放目标物品、<b>右槽</b>放堆叠核心 → 取出后该物品 ID 的最大堆叠数 ×2
  * （封顶 99）。同一物品 ID 最多强化 {@link ItemStackSizeOverride#MAX_ENHANCE} 次。</p>
@@ -62,7 +62,7 @@ public final class StackCoreAnvilHandler {
 
     @SubscribeEvent
     public static void onAnvilRepair(AnvilRepairEvent event) {
-        // 仅在服务端执行——单机 IntegratedServer 下此事件会在 Client+Server 各触发一次
+        // 仅在服务端执行—— 单机 IntegratedServer 下此事件会在 Client+Server 各触发一次
         if (event.getEntity().level().isClientSide()) return;
 
         ItemStack left = event.getLeft();

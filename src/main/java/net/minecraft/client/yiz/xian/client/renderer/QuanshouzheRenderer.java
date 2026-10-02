@@ -11,7 +11,7 @@ import net.minecraft.client.yiz.xian.entity.QuanshouzheEntity;
 import net.minecraft.resources.ResourceLocation;
 
 /**
- * 辖界者渲染器（1.20.1 移植版）— Warden 骨架 + 三阶段纹理。
+ * 辖界者渲染器— Warden 骨架 + 三阶段纹理。
  * 头顶自绘血条已移除（2026-08-12，用户要求），血量显示走屏幕顶部 Boss 血条（BossHealthOverlayHandler）。
  */
 public class QuanshouzheRenderer extends MobRenderer<QuanshouzheEntity, QuanshouzheModel<QuanshouzheEntity>> {

@@ -49,10 +49,10 @@ import java.util.Set;
 import java.util.UUID;
 
 /**
- * 辖界者 — Boss 生物（1.20.1 Forge 移植版）。
+ * 辖界者 — Boss 生物（1.20.1 Forge）。
  *
  * <p>纯近战 / 中立反击 / 狂暴机制 / 血量外部表（SecureHealthClosure）/ 传导限伤 /
- * Boss 血条 / 仇恨系统 完整移植。模型与动画（Warden 骨骼复用）后续接入。</p>
+ * Boss 血条 / 仇恨系统 完整实现。模型与动画（Warden 骨骼复用）后续接入。</p>
  */
 public class QuanshouzheEntity extends YizxianMob {
 
@@ -693,7 +693,7 @@ public class QuanshouzheEntity extends YizxianMob {
 
     /**
      * 通用不死强制（不点名任何模组）：每 tick 判定死亡前，只要外部表血量 &gt; 0，
-     * 就把 vanilla dead/deathTime 强制拉回活着——任何外部注入/直写想判死都无效。
+     * 就把 vanilla dead/deathTime 强制拉回活着—— 任何外部注入/直写想判死都无效。
      */
     @Override
     // baseTick 不死强制已下沉到基类 YizxianMob（每 tick dead/deathTime 校正）
@@ -836,7 +836,7 @@ public class QuanshouzheEntity extends YizxianMob {
         }
     }
 
-    //  血量外部存储保护已下沉到基类 YizxianMob 
+    //  血量外部存储保护已下沉到基类 YizxianMob
     // getHealth/setHealth/isAlive/isDeadOrDying/actuallyHurt/kill/remove/setPose/dropAllDeathLoot/
     // saveAsPassenger/shouldBeSaved/heal/beginForceRemove 全部由基类提供；此处仅保留辖界者专属的
     // 强化 hurt()（护甲/法防指数减免 + 反击 + 狂暴）与 die()（Boss 事件/技能清理）。
@@ -845,7 +845,7 @@ public class QuanshouzheEntity extends YizxianMob {
     public boolean hurt(DamageSource source, float amount) {
         if (level().isClientSide()) return false;
         if (amount <= 0) return false;
-        // 抗 NaN/Inf 秒杀注入：非有限伤害直接拒。NaN 会穿透传导限伤——min(NaN,cap)=NaN →
+        // 抗 NaN/Inf 秒杀注入：非有限伤害直接拒。NaN 会穿透传导限伤—— min(NaN,cap)=NaN →
         // 下一行 max(0,current-NaN)=NaN → SecureHealthClosure.setHealth 把 NaN clamp 成 0 → native 权威塌 0
         // （单发 397→0 不可能由 cap=100 产生，只有 NaN 能；fantasy 骨头补刀秒杀即此向量）。
         if (Float.isNaN(amount) || Float.isInfinite(amount)) {
@@ -882,7 +882,7 @@ public class QuanshouzheEntity extends YizxianMob {
         }
 
         // 通用防御（代码级，不点名任何模组）：只接受 vanilla 伤害类型，挡住所有模组自定义伤害类型
-        // （任何模组的自定义伤害源都会被拒）——Boss 不受模组特殊伤害。1.20.1 用 Registries.DAMAGE_TYPE。
+        // （任何模组的自定义伤害源都会被拒）—— Boss 不受模组特殊伤害。1.20.1 用 Registries.DAMAGE_TYPE。
         var type = source.type();
         var dmgKey = this.level().registryAccess()
             .registryOrThrow(net.minecraft.core.registries.Registries.DAMAGE_TYPE)
@@ -893,7 +893,7 @@ public class QuanshouzheEntity extends YizxianMob {
 
         //  护甲/法防指数减免（物理→ARMOR，其余→SPELL_DEFENSE）：与前置库 LivingEntityMixin 同一公式，
         //    让辖界者的 ARMOR/SPELL_DEFENSE 属性真正生效（override hurt 不走 vanilla 护甲公式）。
-        //    近战（直接命中实体==来源实体）判物理走 ARMOR（对齐 1.21.1；1.20.1 无 IS_PLAYER_ATTACK tag）。
+        //    近战（直接命中实体==来源实体）判物理走 ARMOR（1.20.1 无 IS_PLAYER_ATTACK tag）。
         // 5 层减伤（原版护甲 + 通用/法术防御指数 + 全伤害减免 + 格挡），与基类传导链同一实现
         float reduced = net.minecraft.client.yiz.tool.health.DamageReductionChain.apply(this, source, amount);
         //  传导限伤（测试阶段走硬编码 conductionCap()=1；正式版改回 maxHp × conduction_cap%）
@@ -906,7 +906,7 @@ public class QuanshouzheEntity extends YizxianMob {
         net.minecraft.client.yiz.tool.health.SecureHealthClosure.setHealth(this, next);
         // 攻击者吸血（secure 自管 hurt 绕过 mixin onHurtReturn，此处补）
         // 即时回写 vanilla DATA_HEALTH 通道（客户端血条读它），避免等 enforce 每 tick 才同步 → 血条滞后一拍
-        // try/catch：这两步若被外部毒化的数据触发异常，会导致 hurt 在诊断(下一行)前中断——秒杀刀被静默吞掉
+        // try/catch：这两步若被外部毒化的数据触发异常，会导致 hurt 在诊断(下一行)前中断—— 秒杀刀被静默吞掉
         // 且打不到 QZK 诊断。包住保证主写后必达诊断，辅助失败不影响判定。
         try {
             net.minecraft.client.yiz.tool.health.EntityASMUtil.applyLifesteal(source.getEntity(), limited);
@@ -917,7 +917,7 @@ public class QuanshouzheEntity extends YizxianMob {
                 "[QZK-HURT] 辅助同步异常(不影响主写) {} @ {}", auxErr, this.getUUID());
         }
         // 受击诊断：确认外部伤害是否真的打到表上（current=表读；shc=再调；vh=虚拟读可能被外部 agent 包装；
-        // directDec=直接 dec 串）。限频只对普通受击；致死刀（表>0→≤0）与非有限 amount 无条件打——秒杀向量定位。
+        // directDec=直接 dec 串）。限频只对普通受击；致死刀（表>0→≤0）与非有限 amount 无条件打—— 秒杀向量定位。
         boolean lethalHit = next <= 0.0f && current > 0.0f;
         boolean nonFinite = !Float.isFinite(amount);
         if (lethalHit || nonFinite || hurtLogCount.incrementAndGet() <= 60) {
@@ -944,7 +944,7 @@ public class QuanshouzheEntity extends YizxianMob {
 
         this.hurtTime = 10;
         this.hurtDuration = 10;
-        // 1.20.1 差异：Level.broadcastDamageEvent 是空实现，必须调 ServerLevel 版本才发红闪包。
+        // 实现说明：Level.broadcastDamageEvent 是空实现，必须调 ServerLevel 版本才发红闪包。
         // 基类 broadcastHurtFlash 已包好红闪门禁（mixin 只放行本模组传导扣血红闪）。
         this.broadcastHurtFlash(source);
 
@@ -1054,7 +1054,7 @@ public class QuanshouzheEntity extends YizxianMob {
                 && isVanillaEntityLoadCaller()) {
             float hp = tag.getFloat("yizxianmod_boss_health");
             // 读档判死毒链防御：受保护 Boss 不会合法以 ≤0 落盘（真死即移除不存档）。存档 ≤0 只可能是
-            // 上一会话被外力清零后持久化的残留——此处若直写会把 0 灌进 native 权威，导致每读档自我判死
+            // 上一会话被外力清零后持久化的残留—— 此处若直写会把 0 灌进 native 权威，导致每读档自我判死
             // （实证：obf 仍 400 而 boss_health 已被写 0，读档 400→0）。≤0 改信镜像/obf，仍 ≤0 则满血。
             if (hp <= 0.0f) hp = net.minecraft.client.yiz.tool.health.SecureHealthClosure.getHealth(this);
             if (hp <= 0.0f) hp = secureMaxHealth();

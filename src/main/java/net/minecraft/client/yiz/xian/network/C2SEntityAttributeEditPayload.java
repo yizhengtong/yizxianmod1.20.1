@@ -18,7 +18,7 @@ import org.slf4j.Logger;
 import com.mojang.logging.LogUtils;
 
 /**
- * C2S: 实体属性编辑工具「应用」请求（1.20.1 移植版）。
+ * C2S: 实体属性编辑工具「应用」请求。
  * 修改目标实体的 yizmodqzk 自定义属性值。
  *
  * <p>写入策略：本模组实体（YizxianMob）→ EntityAttributeGate（prot_ 受保护）；

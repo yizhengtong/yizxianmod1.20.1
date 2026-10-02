@@ -7,7 +7,7 @@ import net.minecraft.world.inventory.Slot;
 import net.minecraft.world.item.ItemStack;
 
 /**
- * 实体属性编辑容器 Menu（1.20.1 移植版）。
+ * 实体属性编辑容器 Menu。
  *
  * <p>服务端打开时把目标实体 id 经 IForgeMenuType 额外数据传给客户端，客户端 Menu 只存实体 id；
  * 实际写入走 C2S 网络包。</p>

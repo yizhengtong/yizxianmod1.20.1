@@ -16,7 +16,7 @@ import net.minecraft.world.level.Level;
  * 辖界者刷怪蛋（自定义，延迟解析实体类型）。
  *
  * <p><b>为什么不用原版 {@code SpawnEggItem}：</b>原版 {@code SpawnEggItem} 构造需要 {@code EntityType}
- * 实例，而 Forge 的 ITEMS 注册事件早于 ENTITY_TYPE 注册事件——生物蛋 DeferredRegister supplier 里
+ * 实例，而 Forge 的 ITEMS 注册事件早于 ENTITY_TYPE 注册事件—— 生物蛋 DeferredRegister supplier 里
  * 直接 {@code QUANSHOUZHE.get()} 会抛 {@code Registry Object not present}（跨注册表时序问题）。
  * 本类在 {@code use} 时刻才解析实体类型（此时实体注册表已就绪），右键在脚下生成辖界者。</p>
  */

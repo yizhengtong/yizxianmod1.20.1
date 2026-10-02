@@ -142,6 +142,12 @@ repositories {
 
     // 前置库 yizmodqzk 本地 maven 仓库（前置库 publishToMavenLocal 发布，供 fg.deobf 反映射）
     mavenLocal()
+
+    // libs/ 内的第三方前置 jar（Curios）：必须走 flatDir 的“模块依赖”，fg.deobf 才能反映射。
+    // 用 fg.deobf(files("libs/xxx.jar")) 不行 —— ForgeGradle 会警告
+    // "files(...) dependencies are not deobfuscated ... using obfuscated version!"，
+    // 于是 dev 环境拿到的是 SRG jar，runClient 直接 NoSuchMethodError。
+    flatDir { dir 'libs' }
 }
 
 dependencies {
@@ -154,6 +160,11 @@ dependencies {
 
     // 前置库 yizmodqzk 依赖（mavenLocal 发布，fg.deobf 把 SRG jar 反映射成 official 供开发环境使用）
     implementation fg.deobf("net.minecraft.client.yiz:yizmodqzk:1.0")
+
+    // 前置 Curios API（饰品槽位 / ICurioItem）。flatDir 组名会被忽略，实际取 libs/ 下同名 jar。
+    // fg.deobf 把它反映射成 official：编译期可用，dev 运行时（runClient）也会作为模组加载，可直接测饰品。
+    // 生产环境由下方 Jar-in-Jar 内嵌的同一份生产 jar 兜底；玩家另装 Curios 时用玩家自己的版本。
+    implementation fg.deobf("blank:curios-forge:${curios_version}")
 
     // Example mod dependency with JEI - using fg.deobf() ensures the dependency is remapped to your development mappings
     // The JEI API is declared for compile time use, while the full JEI artifact is used at runtime
@@ -186,7 +197,8 @@ tasks.named('processResources', ProcessResources).configure {
                              forge_version       : forge_version, forge_version_range: forge_version_range,
                              loader_version_range: loader_version_range,
                              mod_id              : mod_id, mod_name: mod_name, mod_license: mod_license, mod_version: mod_version,
-                             mod_authors         : mod_authors, mod_description: mod_description,]
+                             mod_authors         : mod_authors, mod_description: mod_description,
+                             curios_version      : curios_version,]
 
     inputs.properties replaceProperties
 
@@ -209,6 +221,28 @@ tasks.named('jar', Jar).configure {
 
     // This is the preferred method to reobfuscate your jar file
     finalizedBy 'reobfJar'
+}
+
+// ==================== Jar-in-Jar：内嵌 Curios API 前置 ====================
+// 未装 Curios 的玩家：Forge 的 JarJar 定位器读取 META-INF/jarjar/metadata.json，自动加载内嵌副本，
+//   mods.toml 里对 curios 的 mandatory 前置声明因此得以满足。
+// 已装 Curios 的玩家：JarSelector 会把顶层模组按 modId 登记进 claimed，内嵌副本被丢弃（日志一条 warn），
+//   改用玩家自己的版本 —— 不会出现 duplicate mod 崩溃；玩家想换版本直接装 Curios 即可覆盖。
+// metadata 是手写的：ForgeGradle 的 jarJar 任务只接受 maven 坐标依赖（ModuleDependency），
+//   本项目用的是 libs 内的本地 jar，所以由 jar 任务直接放入 jar 与 metadata。
+tasks.named('jar', Jar).configure {
+    from("libs/curios-forge-${curios_version}.jar") {
+        into 'META-INF/jarjar'
+    }
+    from('jarjar/metadata.json') {
+        into 'META-INF/jarjar'
+        expand(curios_version: curios_version)
+    }
+    // LGPL-3.0 §4(a) 显式声明：第三方声明随发行 jar 一起走。
+    // （许可证全文在 src/main/resources/META-INF/licenses/ 下，随 processResources 自动进 jar）
+    from('THIRD-PARTY-NOTICES.md') {
+        into 'META-INF'
+    }
 }
 
 tasks.withType(JavaCompile).configureEach {

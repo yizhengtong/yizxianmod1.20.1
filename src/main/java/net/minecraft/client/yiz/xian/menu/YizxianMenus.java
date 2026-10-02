@@ -9,7 +9,7 @@ import net.minecraftforge.registries.ForgeRegistries;
 import net.minecraftforge.registries.RegistryObject;
 
 /**
- * 容器 MenuType 注册中心（1.20.1 移植版）。
+ * 容器 MenuType 注册中心。
  */
 public final class YizxianMenus {
 

@@ -30,6 +30,8 @@ displayName = "${mod_name}" #mandatory
 #credits="Thanks for this example mod goes to Java" #optional
 # A text field displayed in the mod UI
 authors = "${mod_authors}" #optional
+# Third-party notice: the bundled Curios API keeps its own license (LGPL-3.0-or-later).
+credits = "Bundles Curios API ${curios_version} by C4 (TheIllusiveC4), LGPL-3.0-or-later - https://github.com/TheIllusiveC4/Curios"
 # Display Test controls the display for your mod in the server connection screen
 # MATCH_VERSION means that your mod will cause a red X if the versions on client and server differ. This is the default behaviour and should be what you choose if you have server and client elements to your mod.
 # IGNORE_SERVER_VERSION means that your mod will not cause a red X if it's present on the server but not on the client. This is what you should use if you're a server only mod.
@@ -67,4 +69,12 @@ modId = "yizmodqzk"
 mandatory = true
 versionRange = "[1.0,)"
 ordering = "NONE"
+side = "BOTH"
+# Curios API (accessory slots). Bundled via Jar-in-Jar, so it is always present:
+# players without Curios get the nested copy, players with Curios keep their own version.
+[[dependencies."${mod_id}"]]
+modId = "curios"
+mandatory = true
+versionRange = "[${curios_version},)"
+ordering = "AFTER"
 side = "BOTH"

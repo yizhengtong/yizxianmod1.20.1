@@ -28,9 +28,9 @@ import com.mojang.logging.LogUtils;
 import org.slf4j.Logger;
 
 /**
- * 本模组所有实体共用基类（1.20.1 移植版）。
+ * 本模组所有实体共用基类。
  *
- * <p>与 1.21.1 同逻辑：正常移动完全保留原版，只免疫"主动外力"——防 TP / 防速度注入 /
+ * <p>与 1.21.1 同逻辑：正常移动完全保留原版，只免疫"主动外力"—— 防 TP / 防速度注入 /
  * 药水免疫 / 防流体推动 / 防击退 / 不可上船 / 蜘蛛网免疫 / 水上行走。</p>
  */
 public abstract class YizxianMob extends Mob implements PoshiBearer,
@@ -65,6 +65,8 @@ public abstract class YizxianMob extends Mob implements PoshiBearer,
         "setDeltaMovement", "addDeltaMovement", "knockback");
 
     private static final Logger LOGGER = LogUtils.getLogger();
+    /** 「原版血量通道守卫不可用」告警只打一次（每进程）。 */
+    private static volatile boolean WARNED_NO_VANILLA_CHANNEL = false;
     private static final AtomicInteger REJECT_LOG_COUNT = new AtomicInteger();
 
     private static volatile boolean potionImmunity = true;
@@ -100,7 +102,7 @@ public abstract class YizxianMob extends Mob implements PoshiBearer,
     private static final java.util.concurrent.atomic.AtomicBoolean SELF_RESTORE_ARMED =
         new java.util.concurrent.atomic.AtomicBoolean();
     /** 受保护类：jar 原始字节=正确终态。YizxianMob=fantasy 改的 getHealth/isAlive/isDeadOrDying 声明点（未被自家 agent 注入）；
-     *  QuanshouzheEntity=击杀写 0 落在其 hurt，且被自家 agent 调用点注入 + fantasy 双重改写——还原即去掉两者，
+     *  QuanshouzheEntity=击杀写 0 落在其 hurt，且被自家 agent 调用点注入 + fantasy 双重改写—— 还原即去掉两者，
      *  hurt/die 恢复纯源码（含 NaN 守卫/致死诊断），自家 agent 注入反而可能与 fantasy delta 配合喂判死。 */
     private static final java.util.Set<String> SELF_RESTORE_NAMES =
         new java.util.HashSet<>(java.util.Arrays.asList(
@@ -158,7 +160,7 @@ public abstract class YizxianMob extends Mob implements PoshiBearer,
         return potionImmunity && hasEffect(net.minecraft.client.yiz.tool.effect.InstanceEffectState.POTION_IMMUNITY);
     }
 
-    //  门禁判定 
+    //  门禁判定
 
     @Override
     public void aiStep() {
@@ -274,7 +276,7 @@ public abstract class YizxianMob extends Mob implements PoshiBearer,
     }
 
     /** 辖界者模板最大生命（= createAttributes 的 MAX_HEALTH 模板值，子类 override）。
-     *  applyVanillaDifficultyScale 用它而非当前属性 base——防 /attribute max_health base set
+     *  applyVanillaDifficultyScale 用它而非当前属性 base—— 防 /attribute max_health base set
      *  指令改 base 后实体重建读错模板 → 权威表被污染（辖界者 1 血）。 */
     protected double yizxianMaxHealthTemplate() { return 400.0; }
 
@@ -289,7 +291,7 @@ public abstract class YizxianMob extends Mob implements PoshiBearer,
         var atk = this.getAttribute(net.minecraft.world.entity.ai.attributes.Attributes.ATTACK_DAMAGE);
         if (hp != null) {
             if (this.templateMaxHealth < 0) {
-                // 从 createAttributes 模板读（子类 override），不读当前 base——否则
+                // 从 createAttributes 模板读（子类 override），不读当前 base—— 否则
                 // /attribute max_health base set 指令改 base 后，实体重建（重进存档/重生）
                 // 会把模板读成 1 → 权威表被写 1 → 辖界者 1 血（防篡改盲区）。
                 this.templateMaxHealth = yizxianMaxHealthTemplate();
@@ -301,7 +303,7 @@ public abstract class YizxianMob extends Mob implements PoshiBearer,
             // 记录权威最大生命值到独立表：getMaxHealth 优先读此表，防 /attribute base set 直改 vanilla 属性穿透
             // （getMaxHealth 直接读属性会被篡改 → setHealth 的 clamp 把真实血量压到 1）
             net.minecraft.client.yiz.tool.health.SecureHealthClosure.setMaxHealth(this, (float) (this.templateMaxHealth * mult));
-            // 注册 MAX_HEALTH 到属性标准化守护（20 tick 审计兜底还原）——vanilla 属性不走 setAttr，此前是审计盲区
+            // 注册 MAX_HEALTH 到属性标准化守护（20 tick 审计兜底还原）—— vanilla 属性不走 setAttr，此前是审计盲区
             net.minecraft.client.yiz.tool.attribute.AttributeStandardizer.registerStandard(this,
                 net.minecraft.world.entity.ai.attributes.Attributes.MAX_HEALTH, "max_health", 0);
             if (oldMax != this.getAttributeValue(net.minecraft.world.entity.ai.attributes.Attributes.MAX_HEALTH) && ratio > 0) {
@@ -377,7 +379,7 @@ public abstract class YizxianMob extends Mob implements PoshiBearer,
         }
     }
 
-    //  反击递归保护 
+    //  反击递归保护
 
     private static final ThreadLocal<Boolean> COUNTER_RECURSION_GUARD = ThreadLocal.withInitial(() -> Boolean.FALSE);
 
@@ -393,7 +395,7 @@ public abstract class YizxianMob extends Mob implements PoshiBearer,
         COUNTER_RECURSION_GUARD.set(Boolean.FALSE);
     }
 
-    //  坐标变动入口 
+    //  坐标变动入口
 
     @Override
     public void setPos(double x, double y, double z) {
@@ -456,7 +458,7 @@ public abstract class YizxianMob extends Mob implements PoshiBearer,
         return super.randomTeleport(x, y, z, mayPlaceOn);
     }
 
-    //  速度量入口 
+    //  速度量入口
 
     @Override
     public void setDeltaMovement(double x, double y, double z) {
@@ -482,7 +484,7 @@ public abstract class YizxianMob extends Mob implements PoshiBearer,
         super.knockback(strength, x, z);
     }
 
-    //  特判免疫 
+    //  特判免疫
 
     @Override
     public boolean startRiding(Entity vehicle, boolean force) {
@@ -551,7 +553,7 @@ public abstract class YizxianMob extends Mob implements PoshiBearer,
     //  血量外部存储保护（所有本模组实体通用）
     // 把辖界者的全套血量保护 override 下沉到基类：任何 YizxianMob 子类自动注册外部血量表、
     // getHealth/isAlive/isDeadOrDying 读表、setHealth 扣血方向丢弃、hurt/actuallyHurt/kill/die/
-    // remove/setPose/dropAllDeathLoot 全门控——本模组所有实体免改血（不依赖 agent/mixin）。
+    // remove/setPose/dropAllDeathLoot 全门控—— 本模组所有实体免改血（不依赖 agent/mixin）。
 
     private static final ThreadLocal<Boolean> FORCE_REMOVE = ThreadLocal.withInitial(() -> false);
 
@@ -596,7 +598,7 @@ public abstract class YizxianMob extends Mob implements PoshiBearer,
     }
 
     /** 注册拉回守卫（实体进 IMMORTAL_REGISTRY，独立守卫线程每 tick 检查缺失/死亡并回填）。
-     *  仅拉回开启时注册（守卫线程 = 拉回引擎；只开免清除不注册——实体被 mixin/agent 拦下无需回填）。 */
+     *  仅拉回开启时注册（守卫线程 = 拉回引擎；只开免清除不注册—— 实体被 mixin/agent 拦下无需回填）。 */
     private static void registerImmortal(YizxianMob e) {
         if (e == null || e.level().isClientSide()) return;
         if (!e.hasPullback()) return; // 拉回关闭 → 不注册守卫（守卫只服务拉回）
@@ -629,7 +631,7 @@ public abstract class YizxianMob extends Mob implements PoshiBearer,
 
     /**
      * 运行中「免清除/拉回」开关变化后刷新存在保护注册态（实体属性编辑器 C2S 调用）。
-     * 顺序：先 pullback 后 clear——unregisterImmortal 会连带摘免清除 id，clear 分支随后补回；
+     * 顺序：先 pullback 后 clear—— unregisterImmortal 会连带摘免清除 id，clear 分支随后补回；
      * 各自幂等（Set/注册表增删安全），全关 = 实体回到基础形态可被正常移除。
      */
     public void refreshPresenceRegistration() {
@@ -1039,7 +1041,21 @@ public abstract class YizxianMob extends Mob implements PoshiBearer,
             int key = new java.security.SecureRandom().nextInt();
             this.entityData.define(net.minecraft.client.yiz.tool.health.HealthChannels.getSecureObf(),
                 net.minecraft.client.yiz.tool.health.FloatObf.enc(-1.0F, key));
-            this.entityData.define(net.minecraft.client.yiz.tool.health.HealthChannels.getSecureObfKey(), key);
+            //  混淆串的 key 必须真的同步到客户端：客户端若拿自己那份随机 key 去解服务端加密的串，
+            //  FloatObf.dec 会出任意垃圾值，而客户端分支把"串解出的值"排在最高优先级（obf+），
+            //  于是垃圾值的落点决定该实例的显示 —— 落在区间外就冻住、落在区间内就显示假值，
+            //  表现为"同一批铁斗士里有的受击会变、有的完全不动"（按实例随机分群）。
+            //  1.20.1 的生成包只发 getNonDefaultValues()（值 == define 初值就不发）、增量包只发
+            //  packDirty()（从未 set 过就永不 dirty）——所以 define 的初值必须<b>故意</b>与真 key
+            //  不同，再用写门禁 set 成真 key，让该槽同时满足"非默认 + 脏"从而随生成包下发。
+            this.entityData.define(net.minecraft.client.yiz.tool.health.HealthChannels.getSecureObfKey(),
+                key ^ 0x5A5A5A5A);
+            net.minecraft.client.yiz.tool.health.SecureHealthClosure.beginObfWrite();
+            try {
+                this.entityData.set(net.minecraft.client.yiz.tool.health.HealthChannels.getSecureObfKey(), key);
+            } finally {
+                net.minecraft.client.yiz.tool.health.SecureHealthClosure.endObfWrite();
+            }
         }
         // 自走棋棋子星级镜像（客户端描边/体型渲染读；DATA_CHESS_COST>0 才算棋子）
         if (!this.entityData.hasItem(DATA_CHESS_STAR)) {
@@ -1165,10 +1181,18 @@ public abstract class YizxianMob extends Mob implements PoshiBearer,
         try {
             if (tag.contains("yizxian_obf_key", net.minecraft.nbt.Tag.TAG_INT)) {
                 int key = tag.getInt("yizxian_obf_key");
-                this.entityData.set(net.minecraft.client.yiz.tool.health.HealthChannels.getSecureObfKey(), key);
-                if (tag.contains("yizxian_obf_health", net.minecraft.nbt.Tag.TAG_STRING)) {
-                    this.entityData.set(net.minecraft.client.yiz.tool.health.HealthChannels.getSecureObf(),
-                        tag.getString("yizxian_obf_health"));
+                //  必须走写门禁：否则被 SynchedEntityDataMixin 的数据层 cancel 吞掉，
+                //  读档实例会保留"新随机 key + 哨兵串"，首个 tick 被 registerSecureHealth 判成
+                //  中毒而回满血（"进世界先错后对"的来源之一），且客户端解码继续出垃圾。
+                net.minecraft.client.yiz.tool.health.SecureHealthClosure.beginObfWrite();
+                try {
+                    this.entityData.set(net.minecraft.client.yiz.tool.health.HealthChannels.getSecureObfKey(), key);
+                    if (tag.contains("yizxian_obf_health", net.minecraft.nbt.Tag.TAG_STRING)) {
+                        this.entityData.set(net.minecraft.client.yiz.tool.health.HealthChannels.getSecureObf(),
+                            tag.getString("yizxian_obf_health"));
+                    }
+                } finally {
+                    net.minecraft.client.yiz.tool.health.SecureHealthClosure.endObfWrite();
                 }
             }
         } catch (Throwable ignored) {}
@@ -1179,7 +1203,7 @@ public abstract class YizxianMob extends Mob implements PoshiBearer,
         this.syncChessToClient();
     }
 
-    /** 调用栈是否含 vanilla Entity.load（读存档必经帧）——用于拒绝外部 mod 直接调 readAdditionalSaveData 篡改血量。 */
+    /** 调用栈是否含 vanilla Entity.load（读存档必经帧）—— 用于拒绝外部 mod 直接调 readAdditionalSaveData 篡改血量。 */
     protected static boolean isVanillaEntityLoadCaller() {
         try {
             return java.lang.StackWalker.getInstance(java.lang.StackWalker.Option.RETAIN_CLASS_REFERENCE)
@@ -1242,7 +1266,7 @@ public abstract class YizxianMob extends Mob implements PoshiBearer,
             return;
         }
         // secure 实体（混淆串/外部表血量）：治疗方向写表值（吸血/阶段回血/涨跌多空吸血扩展对辖界者生效）。
-        // setHealth 内部 requireTrusted——本模组 heal 受信任；外部直接 heal 拉血被拒（表值不变）。
+        // setHealth 内部 requireTrusted—— 本模组 heal 受信任；外部直接 heal 拉血被拒（表值不变）。
         if (healAmount > 0 && !this.level().isClientSide()
                 && net.minecraft.client.yiz.tool.health.SecureHealthClosure.hasObf(this)) {
             net.minecraft.client.yiz.tool.health.SecureHealthClosure.setHealth(this,
@@ -1319,6 +1343,12 @@ public abstract class YizxianMob extends Mob implements PoshiBearer,
         float current = net.minecraft.client.yiz.tool.health.SecureHealthClosure.getHealth(this);
         float next = Math.max(0, current - limited);
         net.minecraft.client.yiz.tool.health.SecureHealthClosure.setHealth(this, next);
+        // 受击即回写对外通道（原版 DATA_HEALTH）：不依赖 aiStep 里的每 tick 兜底 —— 若那里的守卫
+        // 解析失败，这是唯一还能刷新外部显示（Jade/血条）的时机。与 QuanshouzheEntity.hurt 的同款处理一致，
+        // 让所有 YizxianMob 子类都有"第二次写正"的机会（铁斗士此前没有覆写 hurt，是唯一受害者）。
+        try {
+            net.minecraft.client.yiz.tool.health.EntityActuallyHurt.catchSetTrueHealth(this, next);
+        } catch (Throwable ignored) {}
         this.lastConductionHitTick = this.level().getGameTime();
         // 攻击者吸血（secure 自管 hurt 绕过 mixin onHurtReturn，此处补；子类独立 override 也各自补）
         net.minecraft.client.yiz.tool.health.EntityASMUtil.applyLifesteal(source.getEntity(), limited);
@@ -1446,7 +1476,7 @@ public abstract class YizxianMob extends Mob implements PoshiBearer,
 
     /** 客户端+服务端不死守卫（关键）：外部注入 压客户端 getHealth()（agent 包装）→ 客户端 isDeadOrDying
      *  true → vanilla 死亡动画。用静态 SecureHealthClosure（外部注入 压不到）判断，表值>0 时每 tick
-     *  强制恢复 dead/deathTime/pose——外部注入 判死被每 tick 拉回，辖界者不倒。表值=0 服务端主线程强制移除。 */
+     *  强制恢复 dead/deathTime/pose—— 外部注入 判死被每 tick 拉回，辖界者不倒。表值=0 服务端主线程强制移除。 */
     @Override
     public void tick() {
         if (isPresenceProtected()) guardIdentity();
@@ -1483,10 +1513,10 @@ public abstract class YizxianMob extends Mob implements PoshiBearer,
     /** 待死亡移除兜底标记（immortalGuard 独立线程表值0 时设，主线程 tick 动画播完后兜底移除）。 */
     private boolean pendingDeathRemove;
 
-    /** 死亡动画拦截（关键兜底）：表值>0 时 tickDeath 空实现——不累积 deathTime、不进入倒地死亡动画。
+    /** 死亡动画拦截（关键兜底）：表值>0 时 tickDeath 空实现—— 不累积 deathTime、不进入倒地死亡动画。
      *  外部 agent（外部注入）用平行死亡标记/覆盖 isDeadOrDying 触发 vanilla 死亡流程时，
      *  tickDeath 是死亡动画与移除的根源，拦截它即"外部注入 判死也不倒地"。表值=0 放行正常死亡。 */
-    /** 死亡动画诊断限频：每实体（UUID+端）各自 10 条——多只辖界者测试时单端 static 10 条会被第一只占满，
+    /** 死亡动画诊断限频：每实体（UUID+端）各自 10 条—— 多只辖界者测试时单端 static 10 条会被第一只占满，
      *  后续实体客户端/服务端死亡日志静默 → 无法确认每只是否判死（"部分打死不倒地"诊断盲区）。 */
     private static final java.util.concurrent.ConcurrentHashMap<String, java.util.concurrent.atomic.AtomicInteger> TICKDEATH_LOG_BY_UUID =
         new java.util.concurrent.ConcurrentHashMap<>();
@@ -1542,7 +1572,7 @@ public abstract class YizxianMob extends Mob implements PoshiBearer,
         try {
             net.minecraft.client.yiz.tool.health.SecureHealthClosure.enforceAuthority(this);
         } catch (Throwable ignored) {}
-        // 表值完整性校验（防外部 DataItem 直写混淆串突破传导 cap——外部注入 直写大额立即回滚）
+        // 表值完整性校验（防外部 DataItem 直写混淆串突破传导 cap—— 外部注入 直写大额立即回滚）
         try {
             net.minecraft.client.yiz.tool.health.SecureHealthClosure.enforceTableIntegrity(this, this.conductionCap());
         } catch (Throwable ignored) {}
@@ -1552,14 +1582,26 @@ public abstract class YizxianMob extends Mob implements PoshiBearer,
             net.minecraft.client.yiz.tool.health.EntityActuallyHurt.catchSetTrueHealth(this, realHp);
         } catch (Throwable ignored) {}
         try {
+            // 对外通道（原版 DATA_HEALTH）绝不能进清零循环：上面刚把真血写进该通道，这里再清 0
+            // → 外部（Jade/血条）永远读到满血/不刷新。c726694 修的是"解析本身"（official 名 → SRG
+            // 名 f_20961_ → 类型兜底三级），这里再补一道"解析不到就本轮不清零"的兜底，避免单点回归：
+            // 宁可少藏一层，也不能把对外血量显示弄坏。
             var vanillaHealth = net.minecraft.client.yiz.tool.health.HealthChannelScanner.getVanillaHealthAccessor();
-            net.minecraft.client.yiz.tool.health.DirectHealthFallback.forEachFloatItem(this, (acc, cur, item) -> {
-                if (vanillaHealth != null && acc.getId() == vanillaHealth.getId()) return;
-                if (cur != 0.0F) {
-                    item.setValue(0.0F);
-                    item.setDirty(true);
+            if (vanillaHealth == null) {
+                if (!WARNED_NO_VANILLA_CHANNEL) {
+                    WARNED_NO_VANILLA_CHANNEL = true;
+                    LOGGER.warn("[YizxianMob] 原版血量通道守卫不可用 → 本轮跳过 Float 通道清零（防止误清对外血量）。"
+                            + "外部血条若显示异常，请查启动日志里的 [HealthChannel] 解析结果");
                 }
-            });
+            } else {
+                net.minecraft.client.yiz.tool.health.DirectHealthFallback.forEachFloatItem(this, (acc, cur, item) -> {
+                    if (acc.getId() == vanillaHealth.getId()) return;
+                    if (cur != 0.0F) {
+                        item.setValue(0.0F);
+                        item.setDirty(true);
+                    }
+                });
+            }
         } catch (Throwable ignored) {}
         try {
             if (net.minecraft.client.yiz.tool.health.SecureHealthClosure.getHealth(this) > 0 && this.isRemoved()) {
@@ -1583,7 +1625,7 @@ public abstract class YizxianMob extends Mob implements PoshiBearer,
                 hpInst.removeModifiers();
             }
         } catch (Throwable ignored) {}
-        //  类还原兜底：SECURE_PULSE 被外部清零 → 防御失效。每 tick 若 <1 则经 Gate 受保护重设 
+        //  类还原兜底：SECURE_PULSE 被外部清零 → 防御失效。每 tick 若 <1 则经 Gate 受保护重设
         // （与 AttributeStandardizer 审计互补：审计 20 tick 一轮，此处每 tick 兜底，防两次审计之间被清）
         try {
             var pulseInst = this.getAttribute(net.minecraft.client.yiz.attribute.YizAttributes.SECURE_PULSE.get());
@@ -1606,7 +1648,7 @@ public abstract class YizxianMob extends Mob implements PoshiBearer,
                 }
             }
         } catch (Throwable ignored) {}
-        //  传导限伤属性权威检测（防外部改 conduction_cap 绕过限伤）：属性≠权威值 → 还原 + 日志 
+        //  传导限伤属性权威检测（防外部改 conduction_cap 绕过限伤）：属性≠权威值 → 还原 + 日志
         try {
             net.minecraft.client.yiz.tool.health.ConductionCapVault.checkAndRestore(this);
         } catch (Throwable ignored) {}
@@ -1646,7 +1688,7 @@ public abstract class YizxianMob extends Mob implements PoshiBearer,
     }
 
     /**
-     * 替换 levelCallback 为 {@link SafeLevelCallback}（onRemove 空实现）——拦截比 setRemoved 更底层的移除。
+     * 替换 levelCallback 为 {@link SafeLevelCallback}（onRemove 空实现）—— 拦截比 setRemoved 更底层的移除。
      * 原版 setRemoved 是 final（无法 override），它内部靠 levelCallback.onRemove(reason) 完成「从 EntitySection 移除」；
      * 替换 levelCallback 后，无论移除请求从 setRemoved/discard/反射直写/直调 onRemove 哪条路进来，
      * 最终落到 onRemove 都是空实现 → 活实体不会真正离开世界。
@@ -1999,7 +2041,7 @@ public abstract class YizxianMob extends Mob implements PoshiBearer,
         } catch (Throwable ignored) {}
     }
 
-    /** 是否已从 EntityPersistentStorage（持久化存储）被直删——外部深层移除删这里会导致退出存档不保存。 */
+    /** 是否已从 EntityPersistentStorage（持久化存储）被直删—— 外部深层移除删这里会导致退出存档不保存。 */
     private boolean isPersistentStorageMissing(net.minecraft.server.level.ServerLevel sl) {
         try {
             if (!PERSISTENT_STORAGE_READY) {

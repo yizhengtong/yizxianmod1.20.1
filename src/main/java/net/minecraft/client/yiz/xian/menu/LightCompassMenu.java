@@ -17,7 +17,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * 光明指南针容器 Menu（1.20.1 移植版）。
+ * 光明指南针容器 Menu。
  *
  * 布局（见 LightCompassScreen）：① 工作槽 3 个 / ② 搜索栏 / ③ 展示栏 9×5 / ④ 快捷栏 9 / ⑤ 滚动条。
  *

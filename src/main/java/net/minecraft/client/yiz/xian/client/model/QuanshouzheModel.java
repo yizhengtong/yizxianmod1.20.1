@@ -14,7 +14,7 @@ import net.minecraft.client.yiz.xian.entity.QuanshouzheEntity;
 import net.minecraft.util.Mth;
 
 /**
- * 辖界者模型（1.20.1 移植版）— 完全照抄原版 WardenModel 骨骼层级，
+ * 辖界者模型— 完全照抄原版 WardenModel 骨骼层级，
  * 动画照抄原版 idle/walk/tendrils + WardenAnimation 关键帧。
  */
 public class QuanshouzheModel<T extends QuanshouzheEntity> extends HierarchicalModel<T> {

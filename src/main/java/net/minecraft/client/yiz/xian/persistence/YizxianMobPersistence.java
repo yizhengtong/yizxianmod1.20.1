@@ -17,7 +17,7 @@ import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
- * 辖界者独立持久化（SavedData）——对抗外部模组「删磁盘数据」：
+ * 辖界者独立持久化（SavedData）—— 对抗外部模组「删磁盘数据」：
  * chunk 里的实体 NBT 被外部模组删掉后，本 .dat 仍保留辖界者快照，重进时据此重新 spawn。
  *
  * <p>快照内容：实体类型 key + 位置/朝向 + 逻辑血量（SecureHealthClosure 权威表值）。

@@ -10,7 +10,7 @@ import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
 /**
- * 实体移除保护（1.20.1 移植版）— 本模组实体（YizxianMob）的移除总闸门。
+ * 实体移除保护— 本模组实体（YizxianMob）的移除总闸门。
  *
  * <p>拦截 {@link Entity#setRemoved(RemovalReason)}（1.20.1 所有移除的最终汇聚点）。
  * 白名单放行：服务器停止/世界保存、本模组死亡监听（EntityRemoveProtection）、本模组包调用。
@@ -36,7 +36,7 @@ public abstract class EntityRemoveProtectionMixin {
         if (isYizCaller()) return true;
         if (EntityRemoveProtection.consumeDeathAllow(mob.getUUID())) {
             // 死亡放行标记：仅当表值确实≤0（已死未复活）才放行。
-            // 复活（表值被拉回>0）后标记不构成放行依据——免疫移除对活实体始终生效。
+            // 复活（表值被拉回>0）后标记不构成放行依据—— 免疫移除对活实体始终生效。
             return net.minecraft.client.yiz.tool.health.SecureHealthClosure.getHealth(mob) <= 0.0F;
         }
         return false;

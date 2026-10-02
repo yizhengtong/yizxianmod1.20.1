@@ -24,7 +24,7 @@ import net.minecraftforge.fml.common.Mod;
 import java.util.*;
 
 /**
- * 光明末影之眼：手持时给周围末地传送门框画穿墙发光轮廓（1.20.1 移植版）。
+ * 光明末影之眼：手持时给周围末地传送门框画穿墙发光轮廓。
  */
 @Mod.EventBusSubscriber(modid = "yizxianmod", value = Dist.CLIENT)
 public final class EndPortalGlowRenderer {
@@ -133,7 +133,7 @@ public final class EndPortalGlowRenderer {
         };
     }
 
-    /** 判定棱 e 是否是「共面内部接缝」——即 e 两侧各有一个共面相邻单元，e 落在拼接缝上。 */
+    /** 判定棱 e 是否是「共面内部接缝」—— 即 e 两侧各有一个共面相邻单元，e 落在拼接缝上。 */
     private static boolean isCoplanarSeam(int[] e, int x, int y, int z, Direction face, Set<BlockPos> frameSet) {
         int axis = face.getAxis().ordinal();
         int a1 = (axis == 0) ? 1 : 0;

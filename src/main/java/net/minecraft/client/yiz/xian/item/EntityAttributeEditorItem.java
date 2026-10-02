@@ -14,7 +14,7 @@ import net.minecraft.world.item.ItemStack;
 import net.minecraft.client.yiz.xian.menu.EntityAttributeEditMenu;
 
 /**
- * 实体属性编辑工具（1.20.1 移植版）— 手持右键任意 LivingEntity 打开容器界面编辑其 yizmodqzk 属性。
+ * 实体属性编辑工具— 手持右键任意 LivingEntity 打开容器界面编辑其 yizmodqzk 属性。
  */
 public class EntityAttributeEditorItem extends Item {
 

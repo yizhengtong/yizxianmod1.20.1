@@ -31,7 +31,7 @@ import java.util.*;
 import java.util.stream.Collectors;
 
 /**
- * 光明指南针高亮渲染器（扫描 + 渲染一体，1.20.1 移植版）。
+ * 光明指南针高亮渲染器（扫描 + 渲染一体，1.20.1）。
  *
  * <h3>生命周期</h3>
  * <ul>

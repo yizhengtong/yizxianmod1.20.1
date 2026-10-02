@@ -1,0 +1,13 @@
+{
+  "itemGroup.yizxianmod.curio": "Curios",
+  "item.yizxianmod.heartsteel": "Heartsteel",
+  "item.yizxianmod.heartsteel.desc": "A steel heart forged from pain - the longer the fight, the harder it gets.",
+  "item.yizxianmod.rumbling_heart": "Rumbling Heart",
+  "item.yizxianmod.rumbling_heart.desc": "A heartbeat like thunder that shakes everything around it.",
+  "item.yizxianmod.boundary_eye": "Eye of the Boundary",
+  "item.yizxianmod.boundary_eye.desc": "A gaze that peers into the rifts of the boundary realm.",
+  "item.yizxianmod.boundary_authority": "Authority of the Boundary",
+  "item.yizxianmod.boundary_authority.desc": "Proof of dominion over a realm.",
+  "curios.identifier.relic": "Relic",
+  "curios.modifiers.relic": "When worn as a relic:"
+}

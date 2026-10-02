@@ -17,7 +17,7 @@ import net.minecraftforge.registries.RegistryObject;
 import java.util.List;
 
 /**
- * 实体属性编辑 Screen（1.20.1 移植版）— 原版容器风格。
+ * 实体属性编辑 Screen— 原版容器风格。
  */
 public class EntityAttributeEditScreen extends AbstractContainerScreen<EntityAttributeEditMenu> {
 
@@ -83,6 +83,19 @@ public class EntityAttributeEditScreen extends AbstractContainerScreen<EntityAtt
     private Button toggleClearBtn;
     private Button togglePullBtn;
 
+    /**
+     * TODO(待完善) 残缺功能开关：「实体免清除」「实体拉回」两个入口暂时隐藏 —— 不创建、不渲染、不响应点击。
+     *
+     * <p><b>后端一律保留不动</b>：{@code YizxianMob} 的 {@code clearImmune}/{@code pullback} 存在性保护
+     * （连同相关 mixin、agent 拦截、守卫线程与快照）全部照旧，只是编辑器界面上的入口先收起来。
+     * 原因：这两个开关目前语义不完整 —— 开启后的实际行为边界、与存档/重进/多实例的交互都还没定型，
+     * 露在外面容易被当成已完成功能误用。</p>
+     *
+     * <p><b>完善后如何恢复</b>：把本常量改回 {@code true} 即可 —— {@code init()} 里两个按钮的创建与
+     * 注册都在同一个分支内；命中/点击的消费侧（{@code mouseClicked}）本来就带 null 判空，无需改动。</p>
+     */
+    private static final boolean SHOW_EXISTENCE_PROTECTION_BUTTONS = false;
+
     public EntityAttributeEditScreen(EntityAttributeEditMenu menu, Inventory inv, Component title) {
         super(menu, inv, title);
         this.imageWidth = 176;
@@ -124,18 +137,26 @@ public class EntityAttributeEditScreen extends AbstractContainerScreen<EntityAtt
         this.clearImmune = receivedClearImmune;
         this.pullback = receivedPullback;
         boolean isYiz = targetEntity() instanceof net.minecraft.client.yiz.xian.entity.base.YizxianMob;
-        this.toggleClearBtn = Button.builder(Component.literal(toggleText("免清除", this.clearImmune)),
-            b -> toggleEffect("clear_immunity", b, true)).bounds(
-                this.leftPos + TOGGLE_X1, this.topPos + TOGGLE_Y, TOGGLE_W, TOGGLE_H).build();
-        this.togglePullBtn = Button.builder(Component.literal(toggleText("拉回", this.pullback)),
-            b -> toggleEffect("pullback", b, false)).bounds(
-                this.leftPos + TOGGLE_X2, this.topPos + TOGGLE_Y, TOGGLE_W, TOGGLE_H).build();
-        if (!isYiz) {
-            this.toggleClearBtn.visible = false;
-            this.togglePullBtn.visible = false;
+        if (SHOW_EXISTENCE_PROTECTION_BUTTONS) {
+            this.toggleClearBtn = Button.builder(Component.literal(toggleText("免清除", this.clearImmune)),
+                b -> toggleEffect("clear_immunity", b, true)).bounds(
+                    this.leftPos + TOGGLE_X1, this.topPos + TOGGLE_Y, TOGGLE_W, TOGGLE_H).build();
+            this.togglePullBtn = Button.builder(Component.literal(toggleText("拉回", this.pullback)),
+                b -> toggleEffect("pullback", b, false)).bounds(
+                    this.leftPos + TOGGLE_X2, this.topPos + TOGGLE_Y, TOGGLE_W, TOGGLE_H).build();
+            if (!isYiz) {
+                this.toggleClearBtn.visible = false;
+                this.togglePullBtn.visible = false;
+            }
+            this.addRenderableWidget(this.toggleClearBtn);
+            this.addRenderableWidget(this.togglePullBtn);
+        } else {
+            //  TODO(待完善): 「实体免清除」「实体拉回」入口暂时隐藏（原因与恢复方式见
+            //  SHOW_EXISTENCE_PROTECTION_BUTTONS 的注释）。置空即可，消费侧有 null 判空，
+            //  不会残留不可见按钮、也不会吞掉这块区域的点击。
+            this.toggleClearBtn = null;
+            this.togglePullBtn = null;
         }
-        this.addRenderableWidget(this.toggleClearBtn);
-        this.addRenderableWidget(this.togglePullBtn);
         this.valueInput = new EditBox(this.font, this.leftPos + 12, this.topPos + LIST_Y0 + 26, 120, 14, Component.literal("输入数值"));
         this.valueInput.setMaxLength(16);
         this.valueInput.setVisible(false);

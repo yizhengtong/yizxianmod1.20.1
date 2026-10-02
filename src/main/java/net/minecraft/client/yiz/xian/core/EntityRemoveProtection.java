@@ -9,7 +9,7 @@ import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerLevel;
 
 /**
- * 实体移除保护白名单（1.20.1 移植版）。
+ * 实体移除保护白名单。
  *
  * <p>配合 ServerLevel 层移除保护（后续 mixin 落地）：ServerLevel 默认拒绝移除本模组实体
  * （YizxianMob），仅白名单放行。实体生命值 ≤0 时由 YizxianMob 在 aiStep 标记，原版死亡移除据此放行。</p>

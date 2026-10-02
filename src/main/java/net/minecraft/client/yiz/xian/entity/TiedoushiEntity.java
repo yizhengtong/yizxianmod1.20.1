@@ -76,7 +76,7 @@ public class TiedoushiEntity extends YizxianMob {
     private static final double SKILL_FALLOFF_PER_BLOCK = 0.08;
     private static final double SKILL_ATTACK_MULT = 2.5;
     private static final double SKILL_DREAM_MOB = 0.50;
-    // 注：原先还有 SKILL_DREAM_PLAYER（对玩家 25% 多空真伤）——已按需求移除，玩家只吃普通伤害
+    // 注：原先还有 SKILL_DREAM_PLAYER（对玩家 25% 多空真伤）—— 已按需求移除，玩家只吃普通伤害
 
     // ── 攻击/动画节奏：整体比原始 Blockbench 动画快 30%（动画侧由 TiedoushiModel 的
     //    ANIM_SPEED 提速，此处所有 tick 数按 1.3 折算，保证伤害关键帧仍落在对应动作上）──
@@ -329,7 +329,7 @@ public class TiedoushiEntity extends YizxianMob {
         super.aiStep();
         if (this.level().isClientSide()) return;
 
-        // 位移档位（待机/行走/追击）由服务端判定并同步——客户端拿不到 getTarget()，见 DataHolder.LOCOMOTION
+        // 位移档位（待机/行走/追击）由服务端判定并同步—— 客户端拿不到 getTarget()，见 DataHolder.LOCOMOTION
         this.updateLocomotionState();
 
         // 出生属性/星级/满血已由基类 aiStep 一次跑完（applyEntityAttributes → registerSecureHealth

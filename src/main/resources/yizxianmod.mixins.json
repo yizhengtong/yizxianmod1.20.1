@@ -20,8 +20,7 @@
     "PlayerAttackMixin",
     "ClientLevelEntityAddGuardMixin",
     "EntityRenderVisibilityGuardMixin",
-    "AutoAttackMixin",
-    "ItemRendererGlowMixin"
+    "AutoAttackMixin"
   ],
   "injectors": {
     "defaultRequire": 1

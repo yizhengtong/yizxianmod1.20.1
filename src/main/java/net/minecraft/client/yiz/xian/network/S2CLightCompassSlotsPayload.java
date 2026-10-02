@@ -8,7 +8,7 @@ import net.minecraftforge.network.NetworkEvent;
 import java.util.function.Supplier;
 
 /**
- * S2C: 光明指南针工作槽内容同步（1.20.1 移植版）。
+ * S2C: 光明指南针工作槽内容同步。
  *
  * <p>服务端 Menu 在工作槽变更时把 3 个槽的物品注册表 ID（-1 空槽）推给客户端，
  * 客户端写入 {@link LightCompassData} 缓存，供 {@code LightCompassHighlightRenderer}

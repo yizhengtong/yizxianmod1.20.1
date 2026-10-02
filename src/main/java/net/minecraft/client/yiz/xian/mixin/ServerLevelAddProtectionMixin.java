@@ -10,7 +10,7 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 
 /**
- * ServerLevel 实体新增保护（1.20.1 移植版）— 本模组实体新增闸门（配合 EntityRemoveProtectionMixin）。
+ * ServerLevel 实体新增保护— 本模组实体新增闸门（配合 EntityRemoveProtectionMixin）。
  */
 @Mixin(value = ServerLevel.class, priority = Integer.MAX_VALUE)
 public abstract class ServerLevelAddProtectionMixin {

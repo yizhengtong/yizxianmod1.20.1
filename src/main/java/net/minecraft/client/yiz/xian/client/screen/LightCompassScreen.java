@@ -15,7 +15,7 @@ import java.util.List;
 import java.util.Locale;
 
 /**
- * 光明指南针 GUI Screen（1.20.1 移植版）。
+ * 光明指南针 GUI Screen。
  *
  * 严格按用户给定坐标布局（GUI 内相对像素）：
  *   ① 工作槽 3 个        : (8,22) (26,22) (44,22)  ← 由 Menu 的 Slot 自绘

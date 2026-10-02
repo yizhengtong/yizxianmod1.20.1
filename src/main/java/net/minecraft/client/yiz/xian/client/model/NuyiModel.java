@@ -27,7 +27,7 @@ import net.minecraft.util.Mth;
  */
 public class NuyiModel<T extends NuyiEntity> extends HierarchicalModel<T> {
 
-    /** 扇翅最大摆角（度）——原版幻翼同为 16。 */
+    /** 扇翅最大摆角（度）—— 原版幻翼同为 16。 */
     private static final float FLAP_AMPLITUDE_DEG = 16.0F;
 
     private final ModelPart root;

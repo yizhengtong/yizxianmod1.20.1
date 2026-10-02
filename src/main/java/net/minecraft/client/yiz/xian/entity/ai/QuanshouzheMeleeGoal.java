@@ -8,7 +8,7 @@ import net.minecraft.world.entity.ai.goal.Goal;
 import java.util.EnumSet;
 
 /**
- * 辖界者近战挥砍 Goal（1.20.1 移植版）— 贴近目标即时结算伤害。
+ * 辖界者近战挥砍 Goal— 贴近目标即时结算伤害。
  * 攻击动画 = Warden 关键帧（broadcastEntityEvent byte 4 触发）；
  * 攻击间隔/距离按三阶段形态（getAttackInterval / getAttackRange），狂暴只保留移速加成。
  */

@@ -89,6 +89,37 @@ public class YizxianMod {
         ITEMS.register("entity_probe", () ->
             new net.minecraft.client.yiz.xian.item.EntityProbeItem(new Item.Properties().stacksTo(1)));
 
+    // ── 饰品（Curios API，前置由 Jar-in-Jar 内嵌兜底）────────────────
+    // Curios 5.x 的槽位是「两段式」的，两处都要有，缺一段就没有任何槽位（且不报错）：
+    //   ① 声明类型：data/yizxianmod/curios/slots/*.json（本模组只自定义了 relic）
+    //   ② 分配给实体：data/yizxianmod/curios/entities/player.json
+    //      —— Curios 自带的 10 个槽位同样不会自动给玩家，用到哪些就要在这里列哪些
+    //   ③ 物品绑定（这一层才是"物品进哪个槽"）：
+    //   heartsteel          → data/curios/tags/items/body.json      （胸饰）
+    //   rumbling_heart      → data/curios/tags/items/charm.json     （护符）
+    //   boundary_eye        → data/curios/tags/items/necklace.json  （项链）
+    //   boundary_authority  → data/curios/tags/items/relic.json     （自定义槽位「遗物」）
+
+    /** 心之钢（胸饰）：+6 最大生命、+2 护甲。 */
+    public static final RegistryObject<Item> HEARTSTEEL =
+        ITEMS.register("heartsteel", () ->
+            new net.minecraft.client.yiz.xian.item.curio.HeartsteelItem(new Item.Properties().stacksTo(1)));
+
+    /** 轰然之心（护符）：+3 最大生命、+10% 击退抗性。 */
+    public static final RegistryObject<Item> RUMBLING_HEART =
+        ITEMS.register("rumbling_heart", () ->
+            new net.minecraft.client.yiz.xian.item.curio.RumblingHeartItem(new Item.Properties().stacksTo(1)));
+
+    /** 辖界之眼（项链）：功能型，无属性。 */
+    public static final RegistryObject<Item> BOUNDARY_EYE =
+        ITEMS.register("boundary_eye", () ->
+            new net.minecraft.client.yiz.xian.item.curio.BoundaryEyeItem(new Item.Properties().stacksTo(1)));
+
+    /** 辖界的权柄（遗物·自定义槽位）：+2 攻击伤害。 */
+    public static final RegistryObject<Item> BOUNDARY_AUTHORITY =
+        ITEMS.register("boundary_authority", () ->
+            new net.minecraft.client.yiz.xian.item.curio.BoundaryAuthorityItem(new Item.Properties().stacksTo(1)));
+
     /** 创造模式标签页：生物蛋 + 编辑器。 */
     public static final DeferredRegister<net.minecraft.world.item.CreativeModeTab> CREATIVE_TABS =
         DeferredRegister.create(net.minecraft.core.registries.Registries.CREATIVE_MODE_TAB, MODID);
@@ -125,6 +156,20 @@ public class YizxianMod {
                     output.accept(BRIGHT_COMPASS.get());
                     output.accept(STACK_CORE.get());
                     output.accept(ENTITY_PROBE.get());
+                })
+                .build());
+
+    /** 饰品标签页（Curios）。 */
+    public static final RegistryObject<net.minecraft.world.item.CreativeModeTab> CURIO_TAB =
+        CREATIVE_TABS.register("curio", () ->
+            net.minecraft.world.item.CreativeModeTab.builder()
+                .title(net.minecraft.network.chat.Component.translatable("itemGroup.yizxianmod.curio"))
+                .icon(() -> new net.minecraft.world.item.ItemStack(HEARTSTEEL.get()))
+                .displayItems((params, output) -> {
+                    output.accept(HEARTSTEEL.get());
+                    output.accept(RUMBLING_HEART.get());
+                    output.accept(BOUNDARY_EYE.get());
+                    output.accept(BOUNDARY_AUTHORITY.get());
                 })
                 .build());
 
@@ -199,7 +244,7 @@ public class YizxianMod {
     }
 
     /**
-     * 铁斗士生物原型（代码轨）——目前只声明「免疫外部动量」。
+     * 铁斗士生物原型（代码轨）—— 目前只声明「免疫外部动量」。
      *
      * <p>{@code knockback_immunity} 由 {@code YizxianMob.motionGate()} 执行：它把
      * {@code setDeltaMovement / addDeltaMovement / knockback} 三个速度入口按调用栈鉴权，
@@ -222,7 +267,7 @@ public class YizxianMod {
             net.minecraft.client.yiz.xian.entity.TiedoushiEntity.class, id);
     }
 
-    //  范围溅射系统（1.21.1 移植：SPLASH_RADIUS/DAMAGE/FALLOFF 属性驱动）
+    //  范围溅射系统（SPLASH_RADIUS/DAMAGE/FALLOFF 属性驱动）
 
     /** 溅射递归保护：溅射伤害的 hurt 不再触发溅射。 */
     private static final ThreadLocal<Boolean> IN_SPLASH = ThreadLocal.withInitial(() -> false);
@@ -234,7 +279,7 @@ public class YizxianMod {
         if (player.level().isClientSide) return;
         if (IN_SPLASH.get()) return;
 
-        // 1.20.1 无武器 Profile（MeleeWeaponItem/WeaponLevelData 未移植，见 port-gap-list），
+        // 1.20.1 无武器 Profile（MeleeWeaponItem/WeaponLevelData 尚未实现），
         // 溅射只由 SPLASH_* 属性驱动。
         float splashRadius = safeAttr(player, net.minecraft.client.yiz.attribute.YizAttributes.SPLASH_RADIUS);
         if (splashRadius > 0 && event.getAmount() > 0

@@ -8,7 +8,7 @@ import net.minecraftforge.registries.ForgeRegistries;
 import net.minecraftforge.registries.RegistryObject;
 
 /**
- * 生物实体注册中心（1.20.1 移植版）。
+ * 生物实体注册中心。
  */
 public final class YizxianEntityTypes {
 

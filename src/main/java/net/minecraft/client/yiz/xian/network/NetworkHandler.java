@@ -6,7 +6,7 @@ import net.minecraftforge.network.NetworkRegistry;
 import net.minecraftforge.network.simple.SimpleChannel;
 
 /**
- * 资源模组 SimpleChannel 网络（1.20.1 移植版）。
+ * 资源模组 SimpleChannel 网络。
  */
 public final class NetworkHandler {
 

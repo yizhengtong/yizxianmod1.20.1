@@ -10,7 +10,7 @@ import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
 /**
- * 受击红闪门控（1.20.1 移植版）— 拦截 {@link ServerLevel#broadcastDamageEvent}，
+ * 受击红闪门控— 拦截 {@link ServerLevel#broadcastDamageEvent}，
  * 只放行本模组传导扣血流程的红闪，拦截外部模组绕过 hurt() 直接广播的红闪。
  */
 @Mixin(value = ServerLevel.class, priority = Integer.MAX_VALUE)

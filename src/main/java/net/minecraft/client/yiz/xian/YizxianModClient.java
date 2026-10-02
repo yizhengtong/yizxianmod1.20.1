@@ -10,7 +10,7 @@ import net.minecraftforge.fml.common.Mod;
 import net.minecraftforge.fml.event.lifecycle.FMLClientSetupEvent;
 
 /**
- * 资源模组客户端（1.20.1 移植版）— 注册辖界者渲染器 + 实体属性编辑 Screen。
+ * 资源模组客户端— 注册辖界者渲染器 + 实体属性编辑 Screen。
  */
 @Mod.EventBusSubscriber(modid = YizxianMod.MODID, bus = Mod.EventBusSubscriber.Bus.MOD, value = Dist.CLIENT)
 public class YizxianModClient {

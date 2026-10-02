@@ -8,7 +8,7 @@ import net.minecraft.world.entity.ai.goal.Goal;
 import java.util.EnumSet;
 
 /**
- * 辖界者反击 Goal（1.20.1 移植版）— 中立生物：不主动索敌，被攻击后锁定攻击者反击。
+ * 辖界者反击 Goal— 中立生物：不主动索敌，被攻击后锁定攻击者反击。
  * 优先玩家（跳过创造模式/无敌），否则 vanilla 最后攻击者。
  */
 public class QuanshouzheRetaliateGoal extends Goal {

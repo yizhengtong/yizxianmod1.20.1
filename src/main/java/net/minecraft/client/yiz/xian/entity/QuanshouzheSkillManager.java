@@ -5,7 +5,7 @@ import net.minecraft.world.entity.LivingEntity;
 import java.util.UUID;
 
 /**
- * 辖界者技能执行器（1.20.1 移植版）— 当前纯近战，无远程技能。
+ * 辖界者技能执行器— 当前纯近战，无远程技能。
  */
 public final class QuanshouzheSkillManager {
 

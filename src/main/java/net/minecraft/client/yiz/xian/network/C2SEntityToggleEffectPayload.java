@@ -12,7 +12,7 @@ import org.slf4j.Logger;
 import com.mojang.logging.LogUtils;
 
 /**
- * C2S: 实体属性编辑工具「保护开关」请求（1.20.1 移植版）。
+ * C2S: 实体属性编辑工具「保护开关」请求。
  * 对目标 YizxianMob 实体开关存在性保护效果（免清除 clear_immunity / 拉回 pullback）。
  * 只对本模组实体生效；普通实体静默忽略。点击即生效（发即改，不随「应用」提交）。
  */

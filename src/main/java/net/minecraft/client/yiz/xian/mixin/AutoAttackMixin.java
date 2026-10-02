@@ -3,66 +3,64 @@ package net.minecraft.client.yiz.xian.mixin;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.player.LocalPlayer;
 import net.minecraft.client.yiz.attribute.YizAttributes;
+import net.minecraft.world.InteractionHand;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.phys.EntityHitResult;
+import net.minecraftforge.client.ForgeHooksClient;
+import net.minecraftforge.client.event.InputEvent;
 import org.spongepowered.asm.mixin.Mixin;
-import org.spongepowered.asm.mixin.Shadow;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
 /**
- * 自动攻击 Mixin — 消费 {@link YizAttributes#AUTO_ATTACK} 属性（1.21.1 移植版）。
+ * 自动攻击 Mixin — 消费 {@link YizAttributes#AUTO_ATTACK} 属性。
  *
- * <p>1.21.1 完整版有三触发源：ILeftHandRender 武器 + auto_attack 附魔 + AUTO_ATTACK 属性。
- * 1.20.1 无 ILeftHandRender 武器接口、无 yizmodqzk:auto_attack 附魔，故只保留属性触发源
- * （见 port-gap-list.md #14）。</p>
+ * <p>触发条件：AUTO_ATTACK &gt; 0 + 按住攻击键 + 冷却满 + 准星在近战范围内瞄到可攻击实体。</p>
  *
- * <p>触发条件：AUTO_ATTACK > 0 + 按住攻击键 + 冷却满 + 瞄准范围内可攻击实体。</p>
+ * <p><b>为什么不再反射调 {@code Minecraft.startAttack()}</b>（2026-10-03 修复）：
+ * 它是 private，只能按「参数签名 + 返回类型」反射定位；而 Minecraft 里「空参 + 返回 boolean」
+ * 的方法有 28 个（{@code checkIs64Bit}/{@code isRunning}/{@code isDemo}/…），
+ * {@code MixinAccess.invoke} 取的是第一个匹配 → 实际调到的是无关方法，返回值被丢弃，
+ * 表现为「属性有值、也瞄着怪，但就是不自动挥」，且全程无报错。
+ * 现改为照抄原版 {@code startAttack()} 的实体分支，全走公开 API：
+ * Forge 输入事件 → {@code isHandsBusy} → {@code gameMode.attack}（内部已重置攻击冷却）→ 按事件决定挥手。</p>
  */
 @Mixin(Minecraft.class)
 public abstract class AutoAttackMixin {
 
     @Inject(method = "tick", at = @At("TAIL"))
     private void yizxian_autoAttack(CallbackInfo ci) {
-        // 生产 SRG 环境下 @Shadow 字段映射不命中会崩溃；Minecraft.player 是 public 字段，强转访问（reobf 映射可靠）
-        LocalPlayer player = ((Minecraft) (Object) this).player;
+        Minecraft mc = (Minecraft) (Object) this;
+        LocalPlayer player = mc.player;
         if (player == null || player.isSpectator()) return;
-        if (player.getAttackStrengthScale(0f) < 1.0f) return;
+        if (mc.gameMode == null || mc.level == null) return;
+        if (mc.screen != null) return;                              // 开着 GUI 不自动打（与原版一致）
+        if (player.getAttackStrengthScale(0f) < 1.0f) return;        // 冷却未满：不挥，避免连发
+        if (player.getAttributeValue(YizAttributes.AUTO_ATTACK.get()) <= 0) return;
+        if (!mc.options.keyAttack.isDown()) return;
 
-        boolean shouldAttack = false;
+        LivingEntity target = aimingTarget(mc, player);
+        if (target == null) return;   // 必须瞄着可攻击实体，避免空挥浪费冷却/误拆方块
 
-        // AUTO_ATTACK 属性（装备授予，免附魔）+ 按住攻击键
-        if (player.getAttributeValue(YizAttributes.AUTO_ATTACK.get()) > 0
-                 && Minecraft.getInstance().options.keyAttack.isDown()) {
-            shouldAttack = true;
-        }
-
-        // 必须瞄准实体且在近战范围内，避免空挥浪费冷却或误拆方块
-        if (shouldAttack && !isAimingAtAttackableEntity(player)) {
-            return;
-        }
-
-        if (shouldAttack) {
-            // 生产 SRG 环境 @Shadow 方法映射不命中会崩溃；Minecraft.startAttack 是 private，
-            // 用 MixinAccess 按签名反射调用（dev/prod 通用）
-            net.minecraft.client.yiz.util.MixinAccess.invoke(this, Minecraft.class, new Class[]{}, boolean.class);
-        }
+        // ── 原版 Minecraft.startAttack() 的实体分支（1.20.1）──
+        InputEvent.InteractionKeyMappingTriggered hook =
+                ForgeHooksClient.onClickInput(0, mc.options.keyAttack, InteractionHand.MAIN_HAND);
+        if (hook.isCanceled() || player.isHandsBusy()) return;
+        mc.gameMode.attack(player, target);   // 发包 + player.attack + resetAttackStrengthTicker
+        if (hook.shouldSwingHand()) player.swing(InteractionHand.MAIN_HAND);
     }
 
-    /** 检查玩家是否正在瞄准一个可攻击的实体且在近战范围内（对齐 1.21.1 交互距离：ENTITY_REACH 默认 3.0 + ATTACK_RANGE 镜像）。 */
-    private static boolean isAimingAtAttackableEntity(LocalPlayer player) {
-        var hit = Minecraft.getInstance().hitResult;
-        if (hit == null) return false;
-        if (!(hit instanceof EntityHitResult ehr)) return false;
+    /** 准星命中的可攻击实体（近战范围内）；无则返回 null。 */
+    private static LivingEntity aimingTarget(Minecraft mc, LocalPlayer player) {
+        if (!(mc.hitResult instanceof EntityHitResult ehr)) return null;
         var entity = ehr.getEntity();
-        if (entity == null || entity == player) return false;
-        if (!(entity instanceof LivingEntity)) return false;
+        if (entity == null || entity == player || !(entity instanceof LivingEntity living)) return null;
         double reach = 3.0;
         try {
             var reachInst = player.getAttribute(net.minecraftforge.common.ForgeMod.ENTITY_REACH.get());
             if (reachInst != null) reach = Math.max(3.0, reachInst.getValue());
         } catch (Throwable ignored) {}
-        return player.distanceTo(entity) <= reach;
+        return player.distanceTo(entity) <= reach ? living : null;
     }
 }

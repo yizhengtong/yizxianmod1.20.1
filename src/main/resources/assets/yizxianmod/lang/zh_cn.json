@@ -102,5 +102,16 @@
   "attribute.yizmodqzk.long_short": "涨跌多空",
   "attribute.yizmodqzk.dream_percent": "灭在多空",
   "item.yizxianmod.entity_attribute_editor": "实体属性编辑工具",
-  "itemGroup.yizxianmod": "辖界者"
+  "itemGroup.yizxianmod": "辖界者",
+  "itemGroup.yizxianmod.curio": "饰品",
+  "item.yizxianmod.heartsteel": "心之钢",
+  "item.yizxianmod.heartsteel.desc": "以伤痛铸成的钢铁之心，越战越硬。",
+  "item.yizxianmod.rumbling_heart": "轰然之心",
+  "item.yizxianmod.rumbling_heart.desc": "心跳如雷，撼动周遭。",
+  "item.yizxianmod.boundary_eye": "辖界之眼",
+  "item.yizxianmod.boundary_eye.desc": "窥见辖界裂隙的目光。",
+  "item.yizxianmod.boundary_authority": "辖界的权柄",
+  "item.yizxianmod.boundary_authority.desc": "统辖一界的凭证。",
+  "curios.identifier.relic": "遗物",
+  "curios.modifiers.relic": "佩戴遗物时："
 }
