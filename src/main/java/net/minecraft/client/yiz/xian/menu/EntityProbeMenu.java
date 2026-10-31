@@ -176,7 +176,13 @@ public class EntityProbeMenu extends AbstractContainerMenu {
             addSlot(new Slot(equipContainer, i, x, y) {
                 @Override
                 public boolean mayPlace(ItemStack stack) {
-                    return canPlaceIn(eq, stack);
+                    // 安全护栏：目标已死亡/卸载时禁止放入，避免物品写入已失效实体（丢失/复制/desync）
+                    return equipTargetLiving() != null && canPlaceIn(eq, stack);
+                }
+
+                @Override
+                public boolean mayPickup(Player player) {
+                    return equipTargetLiving() != null;
                 }
 
                 @Override
@@ -315,7 +321,8 @@ public class EntityProbeMenu extends AbstractContainerMenu {
         @Override
         public ItemStack getItem(int index) {
             LivingEntity l = holder.get();
-            return l != null ? l.getItemBySlot(EQ[index]) : ItemStack.EMPTY;
+            // 安全护栏：返回副本，避免外部/原版容器代码直接改动实体装备实例（分裂/设回同一实例导致复制）。
+            return l != null ? l.getItemBySlot(EQ[index]).copy() : ItemStack.EMPTY;
         }
 
         @Override

@@ -11,6 +11,8 @@ import java.util.function.Supplier;
  */
 public class C2SEntityProbeBlueRequestPayload {
 
+    private static final org.slf4j.Logger LOGGER = org.slf4j.LoggerFactory.getLogger("yizxianmod");
+
     public C2SEntityProbeBlueRequestPayload() {
     }
 
@@ -24,16 +26,24 @@ public class C2SEntityProbeBlueRequestPayload {
     public static void handle(C2SEntityProbeBlueRequestPayload msg, Supplier<NetworkEvent.Context> ctxSup) {
         NetworkEvent.Context ctx = ctxSup.get();
         ctx.enqueueWork(() -> {
-            ServerPlayer sp = ctx.getSender();
-            if (sp != null && sp.containerMenu instanceof net.minecraft.client.yiz.xian.menu.EntityProbeMenu pm) {
-                net.minecraft.world.entity.LivingEntity target = pm.equipTargetLivingServer();
-                if (target != null) {
-                    float cur = net.minecraft.client.yiz.tool.health.ManaTracker.get(target);
-                    float max = net.minecraft.client.yiz.tool.health.ManaTracker.getMax(target);
-                    NetworkHandler.CHANNEL.send(
-                        net.minecraftforge.network.PacketDistributor.PLAYER.with(() -> sp),
-                        new S2CEntityProbeBluePayload(cur, max));
+            // 安全护栏：探查心跳异常只记录，不能打断服务端 tick
+            try {
+                ServerPlayer sp = ctx.getSender();
+                if (sp != null && sp.containerMenu instanceof net.minecraft.client.yiz.xian.menu.EntityProbeMenu pm) {
+                    net.minecraft.world.entity.LivingEntity target = pm.equipTargetLivingServer();
+                    if (target != null) {
+                        float cur = net.minecraft.client.yiz.tool.health.ManaTracker.get(target);
+                        float max = net.minecraft.client.yiz.tool.health.ManaTracker.getMax(target);
+                        if (!Float.isFinite(cur) || !Float.isFinite(max)) return;
+                        NetworkHandler.CHANNEL.send(
+                            net.minecraftforge.network.PacketDistributor.PLAYER.with(() -> sp),
+                            new S2CEntityProbeBluePayload(cur, max));
+                    }
                 }
+            } catch (VirtualMachineError | ThreadDeath fatal) {
+                throw fatal;
+            } catch (Throwable t) {
+                LOGGER.error("[Probe] 蓝量心跳处理异常，已隔离", t);
             }
         });
         ctx.setPacketHandled(true);
