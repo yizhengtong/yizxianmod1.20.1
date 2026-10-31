@@ -49,29 +49,22 @@ public class C2SEntityToggleEffectPayload {
     public static void handle(C2SEntityToggleEffectPayload payload, Supplier<NetworkEvent.Context> ctxSup) {
         NetworkEvent.Context ctx = ctxSup.get();
         ctx.enqueueWork(() -> {
-            // 安全护栏：探查/属性编辑的开关包异常只记录，不打断服务端 tick
-            try {
-                if (!(ctx.getSender() instanceof ServerPlayer)) return;
-                ServerPlayer player = (ServerPlayer) ctx.getSender();
-                if (!(player.level().getEntity(payload.targetId) instanceof LivingEntity target)) return;
-                if (player.distanceToSqr(target) > 64.0 * 64.0) return;
-                // 效果开关只对 YizxianMob 存在性保护有意义
-                if (!(target instanceof YizxianMob mob)) return;
-                // 归属校验走 setEffect（无主放行 / 操作者==owner / 本模组调用栈 trusted）
-                boolean ok = net.minecraft.client.yiz.tool.effect.InstanceEffectState.setEffect(
-                    mob, player.getUUID(), payload.effectKey, payload.on);
-                if (!ok) {
-                    LOGGER.warn("[ToggleEffect] 拒绝 {} {}={} on={}（归属或鉴权失败）", player.getName().getString(),
-                        payload.effectKey, target.getUUID(), payload.on);
-                    return;
-                }
-                // 开关变化后刷新注册态：守卫线程注册表(拉回) / agent 免清除 id / SafeLevelCallback
-                mob.refreshPresenceRegistration();
-            } catch (VirtualMachineError | ThreadDeath fatal) {
-                throw fatal;
-            } catch (Throwable t) {
-                LOGGER.error("[ToggleEffect] 开关包处理异常，已隔离", t);
+            if (!(ctx.getSender() instanceof ServerPlayer)) return;
+            ServerPlayer player = (ServerPlayer) ctx.getSender();
+            if (!(player.level().getEntity(payload.targetId) instanceof LivingEntity target)) return;
+            if (player.distanceToSqr(target) > 64.0 * 64.0) return;
+            // 效果开关只对 YizxianMob 存在性保护有意义
+            if (!(target instanceof YizxianMob mob)) return;
+            // 归属校验走 setEffect（无主放行 / 操作者==owner / 本模组调用栈 trusted）
+            boolean ok = net.minecraft.client.yiz.tool.effect.InstanceEffectState.setEffect(
+                mob, player.getUUID(), payload.effectKey, payload.on);
+            if (!ok) {
+                LOGGER.warn("[ToggleEffect] 拒绝 {} {}={} on={}（归属或鉴权失败）", player.getName().getString(),
+                    payload.effectKey, target.getUUID(), payload.on);
+                return;
             }
+            // 开关变化后刷新注册态：守卫线程注册表(拉回) / agent 免清除 id / SafeLevelCallback
+            mob.refreshPresenceRegistration();
         });
         ctx.setPacketHandled(true);
     }
