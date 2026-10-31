@@ -13,14 +13,23 @@
     "EntityTickListRemoveProtectionMixin",
     "EntityLookupRemoveProtectionMixin",
     "EntitySectionRemoveProtectionMixin",
-    "PersistentEntitySectionManagerAddGuardMixin"
+    "PersistentEntitySectionManagerAddGuardMixin",
+    "LegacyArmorMixin",
+    "LegacyArmorInvoker",
+    "LegacyExtremeItemMixin",
+    "ExtremeEnderPearlPhysicsMixin",
+    "LegacyAttackSpeedMixin",
+    "LegacyInvulnBreakMixin",
+    "LegacyPlayerInvulnBreakMixin",
+    "LegacyPlayerAttackIFramesMixin"
   ],
   "client": [
     "ChatComponentHistoryMixin",
     "PlayerAttackMixin",
     "ClientLevelEntityAddGuardMixin",
     "EntityRenderVisibilityGuardMixin",
-    "AutoAttackMixin"
+    "AutoAttackMixin",
+    "LegacySwordBlockMixin"
   ],
   "injectors": {
     "defaultRequire": 1

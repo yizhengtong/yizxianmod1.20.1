@@ -1,0 +1,6 @@
+{
+  "parent": "minecraft:item/handheld",
+  "textures": {
+    "layer0": "yizxianmod:item/legacy_diamond_pickaxe"
+  }
+}

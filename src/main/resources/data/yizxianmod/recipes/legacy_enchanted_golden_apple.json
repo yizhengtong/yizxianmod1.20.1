@@ -1,0 +1,14 @@
+{
+  "type": "minecraft:crafting_shaped",
+  "category": "misc",
+  "pattern": [
+    "GGG",
+    "GAG",
+    "GGG"
+  ],
+  "key": {
+    "G": { "item": "minecraft:gold_block" },
+    "A": { "item": "minecraft:apple" }
+  },
+  "result": { "item": "yizxianmod:legacy_enchanted_golden_apple" }
+}

@@ -223,6 +223,21 @@ tasks.named('jar', Jar).configure {
     finalizedBy 'reobfJar'
 }
 
+// 防止增量编译把 refmap 弄丢后仍产出“能构建、进游戏 Mixin 崩溃”的 jar。
+// 发布前请使用 clean build；此检查会在 refmap 缺失时直接让 jar 任务失败。
+tasks.register('verifyRefmap') {
+    dependsOn tasks.named('compileJava')
+    doLast {
+        def refmap = file("${buildDir}/tmp/compileJava/compileJava-refmap.json")
+        if (!refmap.exists()) {
+            throw new GradleException("Mixin refmap missing: ${refmap}. Run 'gradlew clean build' before packaging.")
+        }
+    }
+}
+tasks.named('jar', Jar) {
+    dependsOn 'verifyRefmap'
+}
+
 // ==================== Jar-in-Jar：内嵌 Curios API 前置 ====================
 // 未装 Curios 的玩家：Forge 的 JarJar 定位器读取 META-INF/jarjar/metadata.json，自动加载内嵌副本，
 //   mods.toml 里对 curios 的 mandatory 前置声明因此得以满足。

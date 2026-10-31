@@ -41,6 +41,13 @@ public class YizxianModClient {
             MenuScreens.register(
                 net.minecraft.client.yiz.xian.menu.YizxianMenus.ENTITY_PROBE_MENU.get(),
                 net.minecraft.client.yiz.xian.client.screen.EntityProbeScreen::new);
+
+            // 1.8.9 钓鱼竿的 cast 模型切换
+            net.minecraft.client.renderer.item.ItemProperties.register(
+                YizxianMod.LEGACY_FISHING_ROD.get(),
+                new net.minecraft.resources.ResourceLocation("cast"),
+                (stack, level, entity, seed) ->
+                    entity instanceof net.minecraft.world.entity.player.Player p && p.fishing != null ? 1.0F : 0.0F);
         });
     }
 

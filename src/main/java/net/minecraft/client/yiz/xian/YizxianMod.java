@@ -25,6 +25,15 @@ public class YizxianMod {
     public static final DeferredRegister<Item> ITEMS =
         DeferredRegister.create(ForgeRegistries.ITEMS, MODID);
 
+    public static final DeferredRegister<net.minecraft.world.item.enchantment.Enchantment> ENCHANTMENTS =
+        DeferredRegister.create(ForgeRegistries.ENCHANTMENTS, MODID);
+
+    public static final DeferredRegister<net.minecraft.world.effect.MobEffect> EFFECTS =
+        DeferredRegister.create(ForgeRegistries.MOB_EFFECTS, MODID);
+
+    public static final DeferredRegister<net.minecraft.world.item.alchemy.Potion> POTIONS =
+        DeferredRegister.create(ForgeRegistries.POTIONS, MODID);
+
     /** 实体属性编辑工具（右键实体打开容器界面编辑其 yizmodqzk 自定义属性）。 */
     public static final RegistryObject<Item> ENTITY_ATTRIBUTE_EDITOR =
         ITEMS.register("entity_attribute_editor", () ->
@@ -120,6 +129,178 @@ public class YizxianMod {
         ITEMS.register("boundary_authority", () ->
             new net.minecraft.client.yiz.xian.item.curio.BoundaryAuthorityItem(new Item.Properties().stacksTo(1)));
 
+    // ── 1.8.9 怀旧装备（数值严格对齐 1.8.9；不死图腾不在本批）──────────────
+    // 剑/镐：伤害、耐久、无冷却、无横扫、剑格挡；甲：3/8/6/3 固定减伤（韧性不参与）；
+    // 末影之眼：继承原版投掷/填框；附魔金苹果：再生 V 等 1.8 效果。
+
+    /** 怀旧钻石剑：8 伤害、1562 耐久、无横扫、右键 50% 格挡、无攻击冷却。 */
+    public static final RegistryObject<Item> LEGACY_DIAMOND_SWORD =
+        ITEMS.register("legacy_diamond_sword", () ->
+            new net.minecraft.client.yiz.xian.item.legacy.LegacyDiamondSwordItem(new Item.Properties()));
+
+    /** 怀旧钻石镐：6 伤害、1562 耐久、挖掘速度 8/等级 3、无攻击冷却。 */
+    public static final RegistryObject<Item> LEGACY_DIAMOND_PICKAXE =
+        ITEMS.register("legacy_diamond_pickaxe", () ->
+            new net.minecraft.client.yiz.xian.item.legacy.LegacyDiamondPickaxeItem(new Item.Properties()));
+
+    /** 怀旧钻石头盔：3 护甲 / 363 耐久 / 韧性 0（固定减伤走 LegacyArmorMixin）。 */
+    public static final RegistryObject<Item> LEGACY_DIAMOND_HELMET =
+        ITEMS.register("legacy_diamond_helmet", () ->
+            new net.minecraft.client.yiz.xian.item.legacy.LegacyArmorItem(
+                net.minecraft.client.yiz.xian.item.legacy.LegacyArmorMaterial.INSTANCE,
+                net.minecraft.world.item.ArmorItem.Type.HELMET, new Item.Properties()));
+
+    /** 怀旧钻石胸甲：8 护甲 / 528 耐久 / 韧性 0。 */
+    public static final RegistryObject<Item> LEGACY_DIAMOND_CHESTPLATE =
+        ITEMS.register("legacy_diamond_chestplate", () ->
+            new net.minecraft.client.yiz.xian.item.legacy.LegacyArmorItem(
+                net.minecraft.client.yiz.xian.item.legacy.LegacyArmorMaterial.INSTANCE,
+                net.minecraft.world.item.ArmorItem.Type.CHESTPLATE, new Item.Properties()));
+
+    /** 怀旧钻石护腿：6 护甲 / 495 耐久 / 韧性 0。 */
+    public static final RegistryObject<Item> LEGACY_DIAMOND_LEGGINGS =
+        ITEMS.register("legacy_diamond_leggings", () ->
+            new net.minecraft.client.yiz.xian.item.legacy.LegacyArmorItem(
+                net.minecraft.client.yiz.xian.item.legacy.LegacyArmorMaterial.INSTANCE,
+                net.minecraft.world.item.ArmorItem.Type.LEGGINGS, new Item.Properties()));
+
+    /** 怀旧钻石靴子：3 护甲 / 429 耐久 / 韧性 0。 */
+    public static final RegistryObject<Item> LEGACY_DIAMOND_BOOTS =
+        ITEMS.register("legacy_diamond_boots", () ->
+            new net.minecraft.client.yiz.xian.item.legacy.LegacyArmorItem(
+                net.minecraft.client.yiz.xian.item.legacy.LegacyArmorMaterial.INSTANCE,
+                net.minecraft.world.item.ArmorItem.Type.BOOTS, new Item.Properties()));
+
+    /** 怀旧末影珍珠：堆叠 16、投掷传送并造成 5 点伤害、无 1 秒冷却（1.9 才加入）。 */
+    public static final RegistryObject<Item> LEGACY_ENDER_PEARL =
+        ITEMS.register("legacy_ender_pearl", () ->
+            new net.minecraft.client.yiz.xian.item.legacy.LegacyEnderPearlItem(new Item.Properties().stacksTo(16)));
+
+    /** 怀旧附魔金苹果：再生 V 30s、吸收 I 2:00、抗性/抗火 5:00，可满饥饿吃，可合成。 */
+    public static final RegistryObject<Item> LEGACY_ENCHANTED_GOLDEN_APPLE =
+        ITEMS.register("legacy_enchanted_golden_apple", () ->
+            new net.minecraft.client.yiz.xian.item.legacy.LegacyGoldenAppleItem(new Item.Properties()
+                .food(new net.minecraft.world.food.FoodProperties.Builder()
+                    .nutrition(4)
+                    .saturationMod(1.2F)
+                    .alwaysEat()
+                    .build())
+                .rarity(net.minecraft.world.item.Rarity.EPIC)));
+
+    /** 1.8.9 钓鱼竿：65 耐久；鱼饵命中实体击退，收回拉回。 */
+    public static final RegistryObject<Item> LEGACY_FISHING_ROD =
+        ITEMS.register("legacy_fishing_rod", () ->
+            new net.minecraft.client.yiz.xian.item.legacy.LegacyFishingRodItem(
+                new Item.Properties().durability(65)));
+
+    // ── 极尽态（新 ID；耐久 ×10 + Unbreakable）────────────────────────
+
+    /** 怀旧钻石剑——极尽：1562×10 耐久，Unbreakable。 */
+    public static final RegistryObject<Item> LEGACY_DIAMOND_SWORD_EXTREME =
+        ITEMS.register("legacy_diamond_sword_extreme", () ->
+            new net.minecraft.client.yiz.xian.item.legacy.LegacyExtremeDiamondSwordItem(new Item.Properties()));
+
+    /** 怀旧钻石镐——极尽：1562×10 耐久，Unbreakable，+200% 挖掘效率。 */
+    public static final RegistryObject<Item> LEGACY_DIAMOND_PICKAXE_EXTREME =
+        ITEMS.register("legacy_diamond_pickaxe_extreme", () ->
+            new net.minecraft.client.yiz.xian.item.legacy.LegacyExtremeDiamondPickaxeItem(new Item.Properties()));
+
+    /** 怀旧钻石头盔——极尽：363×10 耐久，Unbreakable。 */
+    public static final RegistryObject<Item> LEGACY_DIAMOND_HELMET_EXTREME =
+        ITEMS.register("legacy_diamond_helmet_extreme", () ->
+            new net.minecraft.client.yiz.xian.item.legacy.LegacyExtremeArmorItem(
+                net.minecraft.client.yiz.xian.item.legacy.LegacyExtremeArmorMaterial.INSTANCE,
+                net.minecraft.world.item.ArmorItem.Type.HELMET, new Item.Properties()));
+
+    /** 怀旧钻石胸甲——极尽：528×10 耐久，Unbreakable。 */
+    public static final RegistryObject<Item> LEGACY_DIAMOND_CHESTPLATE_EXTREME =
+        ITEMS.register("legacy_diamond_chestplate_extreme", () ->
+            new net.minecraft.client.yiz.xian.item.legacy.LegacyExtremeArmorItem(
+                net.minecraft.client.yiz.xian.item.legacy.LegacyExtremeArmorMaterial.INSTANCE,
+                net.minecraft.world.item.ArmorItem.Type.CHESTPLATE, new Item.Properties()));
+
+    /** 怀旧钻石护腿——极尽：495×10 耐久，Unbreakable。 */
+    public static final RegistryObject<Item> LEGACY_DIAMOND_LEGGINGS_EXTREME =
+        ITEMS.register("legacy_diamond_leggings_extreme", () ->
+            new net.minecraft.client.yiz.xian.item.legacy.LegacyExtremeArmorItem(
+                net.minecraft.client.yiz.xian.item.legacy.LegacyExtremeArmorMaterial.INSTANCE,
+                net.minecraft.world.item.ArmorItem.Type.LEGGINGS, new Item.Properties()));
+
+    /** 怀旧钻石靴子——极尽：429×10 耐久，Unbreakable。 */
+    public static final RegistryObject<Item> LEGACY_DIAMOND_BOOTS_EXTREME =
+        ITEMS.register("legacy_diamond_boots_extreme", () ->
+            new net.minecraft.client.yiz.xian.item.legacy.LegacyExtremeArmorItem(
+                net.minecraft.client.yiz.xian.item.legacy.LegacyExtremeArmorMaterial.INSTANCE,
+                net.minecraft.world.item.ArmorItem.Type.BOOTS, new Item.Properties()));
+
+    /** 怀旧附魔金苹果——极尽：2 tick 吃完，吸收 IV/抗性 II/再生 V 60s。 */
+    public static final RegistryObject<Item> LEGACY_ENCHANTED_GOLDEN_APPLE_EXTREME =
+        ITEMS.register("legacy_enchanted_golden_apple_extreme", () ->
+            new net.minecraft.client.yiz.xian.item.legacy.LegacyExtremeGoldenAppleItem(new Item.Properties()
+                .food(new net.minecraft.world.food.FoodProperties.Builder()
+                    .nutrition(4)
+                    .saturationMod(1.2F)
+                    .alwaysEat()
+                    .build())
+                .rarity(net.minecraft.world.item.Rarity.EPIC)));
+
+    /** 怀旧末影珍珠——极尽：初速 3.0，飞行中额外加速并减空气衰减。 */
+    public static final RegistryObject<Item> LEGACY_ENDER_PEARL_EXTREME =
+        ITEMS.register("legacy_ender_pearl_extreme", () ->
+            new net.minecraft.client.yiz.xian.item.legacy.LegacyExtremeEnderPearlItem(
+                new Item.Properties().stacksTo(64)));
+
+    /** 1.8.9 锋利附魔（1–5 级，每级 +1.25 伤害）。 */
+    public static final RegistryObject<net.minecraft.world.item.enchantment.Enchantment> LEGACY_SHARPNESS =
+        ENCHANTMENTS.register("legacy_sharpness",
+            net.minecraft.client.yiz.xian.item.legacy.LegacySharpnessEnchantment::new);
+
+    /** 1.8.9 保护附魔（I/II/III/IV = 1/2/3/5 EPF）。 */
+    public static final RegistryObject<net.minecraft.world.item.enchantment.Enchantment> LEGACY_PROTECTION =
+        ENCHANTMENTS.register("legacy_protection",
+            net.minecraft.client.yiz.xian.item.legacy.LegacyProtectionEnchantment::new);
+
+    /** 怀旧力量 Buff（每级 +3 攻击伤害），图标来自 strength.png。 */
+    public static final RegistryObject<net.minecraft.world.effect.MobEffect> LEGACY_STRENGTH_EFFECT =
+        EFFECTS.register("legacy_strength",
+            net.minecraft.client.yiz.xian.item.legacy.LegacyStrengthEffect::new);
+
+    /** 怀旧力量药水 I：1.8 的 3:00。 */
+    public static final RegistryObject<net.minecraft.world.item.alchemy.Potion> LEGACY_STRENGTH =
+        POTIONS.register("legacy_strength", () ->
+            new net.minecraft.world.item.alchemy.Potion(
+                new net.minecraft.world.effect.MobEffectInstance(LEGACY_STRENGTH_EFFECT.get(), 3600, 0)));
+
+    /** 怀旧力量药水 II：1.8 的 1:30。 */
+    public static final RegistryObject<net.minecraft.world.item.alchemy.Potion> LEGACY_STRENGTH_2 =
+        POTIONS.register("legacy_strength_2", () ->
+            new net.minecraft.world.item.alchemy.Potion(
+                new net.minecraft.world.effect.MobEffectInstance(LEGACY_STRENGTH_EFFECT.get(), 1800, 1)));
+
+    /** 极尽力量药水 III：3:00、+9 攻击伤害。 */
+    public static final RegistryObject<net.minecraft.world.item.alchemy.Potion> LEGACY_STRENGTH_3 =
+        POTIONS.register("legacy_strength_3", () ->
+            new net.minecraft.world.item.alchemy.Potion(
+                new net.minecraft.world.effect.MobEffectInstance(LEGACY_STRENGTH_EFFECT.get(), 3600, 2)));
+
+    /** 怀旧力量药水 I 物品。 */
+    public static final RegistryObject<Item> LEGACY_STRENGTH_POTION =
+        ITEMS.register("legacy_strength_potion", () ->
+            new net.minecraft.client.yiz.xian.item.legacy.LegacyPotionItem(
+                LEGACY_STRENGTH::get, new Item.Properties().stacksTo(1)));
+
+    /** 怀旧力量药水 II 物品。 */
+    public static final RegistryObject<Item> LEGACY_STRENGTH_POTION_2 =
+        ITEMS.register("legacy_strength_potion_2", () ->
+            new net.minecraft.client.yiz.xian.item.legacy.LegacyPotionItem(
+                LEGACY_STRENGTH_2::get, new Item.Properties().stacksTo(1)));
+
+    /** 极尽力量药水 III 物品。 */
+    public static final RegistryObject<Item> LEGACY_STRENGTH_POTION_3 =
+        ITEMS.register("legacy_strength_potion_3", () ->
+            new net.minecraft.client.yiz.xian.item.legacy.LegacyPotionItem(
+                LEGACY_STRENGTH_3::get, new Item.Properties().stacksTo(1)));
+
     /** 创造模式标签页：生物蛋 + 编辑器。 */
     public static final DeferredRegister<net.minecraft.world.item.CreativeModeTab> CREATIVE_TABS =
         DeferredRegister.create(net.minecraft.core.registries.Registries.CREATIVE_MODE_TAB, MODID);
@@ -173,6 +354,36 @@ public class YizxianMod {
                 })
                 .build());
 
+    /** 1.8.9 怀旧装备标签页。 */
+    public static final RegistryObject<net.minecraft.world.item.CreativeModeTab> LEGACY_TAB =
+        CREATIVE_TABS.register("legacy", () ->
+            net.minecraft.world.item.CreativeModeTab.builder()
+                .title(net.minecraft.network.chat.Component.translatable("itemGroup.yizxianmod.legacy"))
+                .icon(() -> new net.minecraft.world.item.ItemStack(LEGACY_DIAMOND_SWORD.get()))
+                .displayItems((params, output) -> {
+                    output.accept(LEGACY_DIAMOND_SWORD.get());
+                    output.accept(LEGACY_DIAMOND_PICKAXE.get());
+                    output.accept(LEGACY_DIAMOND_HELMET.get());
+                    output.accept(LEGACY_DIAMOND_CHESTPLATE.get());
+                    output.accept(LEGACY_DIAMOND_LEGGINGS.get());
+                    output.accept(LEGACY_DIAMOND_BOOTS.get());
+                    output.accept(LEGACY_ENDER_PEARL.get());
+                    output.accept(LEGACY_ENCHANTED_GOLDEN_APPLE.get());
+                    output.accept(LEGACY_FISHING_ROD.get());
+                    output.accept(LEGACY_DIAMOND_SWORD_EXTREME.get());
+                    output.accept(LEGACY_DIAMOND_PICKAXE_EXTREME.get());
+                    output.accept(LEGACY_DIAMOND_HELMET_EXTREME.get());
+                    output.accept(LEGACY_DIAMOND_CHESTPLATE_EXTREME.get());
+                    output.accept(LEGACY_DIAMOND_LEGGINGS_EXTREME.get());
+                    output.accept(LEGACY_DIAMOND_BOOTS_EXTREME.get());
+                    output.accept(LEGACY_ENDER_PEARL_EXTREME.get());
+                    output.accept(LEGACY_ENCHANTED_GOLDEN_APPLE_EXTREME.get());
+                    output.accept(legacyPotionStack(LEGACY_STRENGTH_POTION.get(), LEGACY_STRENGTH.get()));
+                    output.accept(legacyPotionStack(LEGACY_STRENGTH_POTION_2.get(), LEGACY_STRENGTH_2.get()));
+                    output.accept(legacyPotionStack(LEGACY_STRENGTH_POTION_3.get(), LEGACY_STRENGTH_3.get()));
+                })
+                .build());
+
     public YizxianMod() {
         var modEventBus = net.minecraftforge.fml.javafmlmod.FMLJavaModLoadingContext.get().getModEventBus();
 
@@ -180,10 +391,36 @@ public class YizxianMod {
         YizxianEntityTypes.ENTITY_TYPES.register(modEventBus);
 
         // 实体属性编辑工具 + 菜单 + 网络
+        EFFECTS.register(modEventBus);
+        POTIONS.register(modEventBus);
         ITEMS.register(modEventBus);
+        ENCHANTMENTS.register(modEventBus);
         // 创造标签页（生物蛋 + 编辑器）
         CREATIVE_TABS.register(modEventBus);
         net.minecraft.client.yiz.xian.menu.YizxianMenus.register(modEventBus);
+
+        // 极尽甲的无碰撞属性不能只注册给玩家：给所有非玩家 LivingEntity 补上 NO_COLLISION，
+        // 这样僵尸/自定义生物穿戴极尽甲时也能真正穿过实体。
+        modEventBus.addListener((net.minecraftforge.event.entity.EntityAttributeModificationEvent e) -> {
+            var noCollision = net.minecraft.client.yiz.attribute.YizAttributes.NO_COLLISION.get();
+            var knockbackImmunity = net.minecraft.client.yiz.attribute.YizAttributes.KNOCKBACK_IMMUNITY.get();
+            for (var type : e.getTypes()) {
+                if (type == net.minecraft.world.entity.EntityType.PLAYER) {
+                    continue;
+                }
+                if (!e.has(type, noCollision)) {
+                    e.add(type, noCollision);
+                }
+                if (!e.has(type, knockbackImmunity)) {
+                    e.add(type, knockbackImmunity);
+                }
+            }
+        });
+
+        // 属性之外的兜底：极尽四件套齐全时无条件免疫击退。
+        // 即使某个环境没把物品 AttributeModifier 正确挂到实体上，也保证全套生效。
+        net.minecraft.client.yiz.api.KnockbackImmunityRegistry.register(
+            net.minecraft.client.yiz.xian.item.legacy.LegacyArmorHelper::isFullExtremeSet);
 
         // 实体属性创建（辖界者 AttributeSupplier）
         modEventBus.addListener((net.minecraftforge.event.entity.EntityAttributeCreationEvent e) -> {
@@ -215,6 +452,18 @@ public class YizxianMod {
         // 堆叠核心：铁砧强化最大堆叠数（AnvilUpdateEvent / AnvilRepairEvent）
         net.minecraftforge.common.MinecraftForge.EVENT_BUS.register(
             net.minecraft.client.yiz.xian.item.StackCoreAnvilHandler.class);
+        // 1.8.9 怀旧装备：剑格挡 50%（LivingHurtEvent）
+        net.minecraftforge.common.MinecraftForge.EVENT_BUS.register(
+            net.minecraft.client.yiz.xian.item.legacy.LegacyCombatEvents.class);
+        // 极尽保护：每级 4.995%，总等级封顶 20 → 99.9%
+        net.minecraftforge.common.MinecraftForge.EVENT_BUS.register(
+            new net.minecraft.client.yiz.xian.item.legacy.LegacyProtectionEvents());
+        // 极尽装备：任意实体装备槽的 Unbreakable 标签兜底
+        net.minecraftforge.common.MinecraftForge.EVENT_BUS.register(
+            net.minecraft.client.yiz.xian.item.legacy.LegacyExtremeItems.class);
+        // 极尽镐：内置 200% 挖掘速度（BreakSpeed）
+        net.minecraftforge.common.MinecraftForge.EVENT_BUS.register(
+            net.minecraft.client.yiz.xian.item.legacy.LegacyMiningSpeedEvents.class);
         // 加入事件反否决：本模组实体的加入不接受外部取消
         net.minecraftforge.common.MinecraftForge.EVENT_BUS.register(
             net.minecraft.client.yiz.xian.core.EntityPresenceEventGuard.class);
@@ -365,6 +614,15 @@ public class YizxianMod {
             net.minecraft.client.yiz.api.OutlineMarker.setLevel(s, egg.outlineLevel());
         }
         return s;
+    }
+
+    /** 创造页药水必须显式写 Potion NBT，否则 accept(Item) 生成的是无药水 NBT 的空瓶。 */
+    private static net.minecraft.world.item.ItemStack legacyPotionStack(
+            net.minecraft.world.item.Item item,
+            net.minecraft.world.item.alchemy.Potion potion) {
+        net.minecraft.world.item.ItemStack stack = new net.minecraft.world.item.ItemStack(item);
+        net.minecraft.world.item.alchemy.PotionUtils.setPotion(stack, potion);
+        return stack;
     }
 
     @SubscribeEvent
