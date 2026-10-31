@@ -187,11 +187,11 @@ public class YizxianMod {
                     .build())
                 .rarity(net.minecraft.world.item.Rarity.EPIC)));
 
-    /** 1.8.9 钓鱼竿：65 耐久；鱼饵命中实体击退，收回拉回。 */
+    /** 1.8.9 钓鱼竿：64 耐久；命中只挂住实体，收竿时按 1.8 公式拉回。 */
     public static final RegistryObject<Item> LEGACY_FISHING_ROD =
         ITEMS.register("legacy_fishing_rod", () ->
             new net.minecraft.client.yiz.xian.item.legacy.LegacyFishingRodItem(
-                new Item.Properties().durability(65)));
+                new Item.Properties().durability(64)));
 
     // ── 极尽态（新 ID；耐久 ×10 + Unbreakable）────────────────────────
 

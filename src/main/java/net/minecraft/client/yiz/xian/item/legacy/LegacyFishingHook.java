@@ -1,17 +1,31 @@
 package net.minecraft.client.yiz.xian.item.legacy;
 
+import net.minecraft.client.yiz.api.KnockbackImmunityRegistry;
+import net.minecraft.client.yiz.attribute.YizAttributes;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.entity.projectile.FishingHook;
+import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.Level;
-import net.minecraft.world.phys.EntityHitResult;
-import net.minecraft.world.phys.Vec3;
 
 /**
- * 1.8.9 鱼饵：命中实体时把实体向外击退；收回时沿用原版 {@code retrieve -> pullEntity} 拉回。
+ * 1.8.9 鱼钩实际代码行为（已按 MCP-919 源码核对）：
  *
- * <p>拉回路径会经过库的 {@code FishingHookKnockbackMixin}，所以极尽套的击退免疫同样生效。</p>
+ * <ul>
+ *   <li>命中实体时只把实体设为 caughtEntity（0 伤害攻击），**没有命中击退**；</li>
+ *   <li>收竿时才对 caughtEntity 施加拉回速度：</li>
+ * </ul>
+ *
+ * <pre>
+ * dx = angler.x - hook.x
+ * dy = angler.y - hook.y
+ * dz = angler.z - hook.z
+ * dist = sqrt(dx² + dy² + dz²)
+ * entity.motionX += dx * 0.1
+ * entity.motionY += dy * 0.1 + sqrt(dist) * 0.08
+ * entity.motionZ += dz * 0.1
+ * </pre>
  */
 public class LegacyFishingHook extends FishingHook {
 
@@ -20,19 +34,41 @@ public class LegacyFishingHook extends FishingHook {
     }
 
     @Override
-    protected void onHitEntity(EntityHitResult result) {
-        super.onHitEntity(result);
-        if (level().isClientSide()) {
+    public int retrieve(ItemStack stack) {
+        int damage = super.retrieve(stack);
+        // 1.8 handleHookRetraction 对 caughtEntity 固定返回 3；1.20.1 对生物返回 5。
+        return damage == 5 ? 3 : damage;
+    }
+
+    @Override
+    protected void pullEntity(Entity entity) {
+        Entity owner = getOwner();
+        if (!(owner instanceof Player angler)) {
             return;
         }
 
-        Entity entity = result.getEntity();
-        if (entity instanceof LivingEntity living && getOwner() instanceof Player player) {
-            Vec3 dir = new Vec3(living.getX() - player.getX(), 0.0D, living.getZ() - player.getZ());
-            if (dir.lengthSqr() > 1.0E-4D) {
-                dir = dir.normalize().scale(0.4D);
-                living.push(dir.x, 0.0D, dir.z);
+        double factor = 1.0D;
+        if (entity instanceof LivingEntity living) {
+            if (KnockbackImmunityRegistry.isImmune(living)) {
+                return;
+            }
+            var inst = living.getAttribute(YizAttributes.KNOCKBACK_IMMUNITY.get());
+            if (inst != null && inst.getValue() > 0) {
+                factor = Math.max(0.0D, 1.0D - Math.min(1.0D, inst.getValue()));
             }
         }
+        if (factor <= 0.0D) {
+            return;
+        }
+
+        double dx = angler.getX() - getX();
+        double dy = angler.getY() - getY();
+        double dz = angler.getZ() - getZ();
+        double distance = Math.sqrt(dx * dx + dy * dy + dz * dz);
+
+        entity.setDeltaMovement(entity.getDeltaMovement().add(
+            dx * 0.1D * factor,
+            (dy * 0.1D + Math.sqrt(distance) * 0.08D) * factor,
+            dz * 0.1D * factor));
     }
 }
