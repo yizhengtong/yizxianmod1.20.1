@@ -187,17 +187,28 @@ public class YizxianMod {
                     .build())
                 .rarity(net.minecraft.world.item.Rarity.EPIC)));
 
-    /** 1.8.9 钓鱼竿：64 耐久；命中只挂住实体，收竿时按 1.8 公式拉回。 */
-    public static final RegistryObject<Item> LEGACY_FISHING_ROD =
-        ITEMS.register("legacy_fishing_rod", () ->
-            new net.minecraft.client.yiz.xian.item.legacy.LegacyFishingRodItem(
-                new Item.Properties().durability(64)));
-
     // ── 极尽态（新 ID；耐久 ×10 + Unbreakable）────────────────────────
 
     /** 怀旧钻石剑——极尽：1562×10 耐久，Unbreakable。 */
     public static final RegistryObject<Item> LEGACY_DIAMOND_SWORD_EXTREME =
         ITEMS.register("legacy_diamond_sword_extreme", () ->
+            new net.minecraft.client.yiz.xian.item.legacy.LegacyExtremeDiamondSwordItem(new Item.Properties()));
+
+    // ── 剑1 / 剑2 / 剑3（面板先沿用「极尽钻石剑」）──────────────────────
+
+    /** 剑1：沿用极尽钻石剑面板（15620 耐久、Unbreakable、+1 自动攻击、50%/75% 格挡）。 */
+    public static final RegistryObject<Item> JIAN_1 =
+        ITEMS.register("jian_1", () ->
+            new net.minecraft.client.yiz.xian.item.legacy.LegacyExtremeDiamondSwordItem(new Item.Properties()));
+
+    /** 剑2：沿用极尽钻石剑面板。 */
+    public static final RegistryObject<Item> JIAN_2 =
+        ITEMS.register("jian_2", () ->
+            new net.minecraft.client.yiz.xian.item.legacy.LegacyExtremeDiamondSwordItem(new Item.Properties()));
+
+    /** 剑3：沿用极尽钻石剑面板。 */
+    public static final RegistryObject<Item> JIAN_3 =
+        ITEMS.register("jian_3", () ->
             new net.minecraft.client.yiz.xian.item.legacy.LegacyExtremeDiamondSwordItem(new Item.Properties()));
 
     /** 怀旧钻石镐——极尽：1562×10 耐久，Unbreakable，+200% 挖掘效率。 */
@@ -369,8 +380,10 @@ public class YizxianMod {
                     output.accept(LEGACY_DIAMOND_BOOTS.get());
                     output.accept(LEGACY_ENDER_PEARL.get());
                     output.accept(LEGACY_ENCHANTED_GOLDEN_APPLE.get());
-                    output.accept(LEGACY_FISHING_ROD.get());
                     output.accept(LEGACY_DIAMOND_SWORD_EXTREME.get());
+                    output.accept(JIAN_1.get());
+                    output.accept(JIAN_2.get());
+                    output.accept(JIAN_3.get());
                     output.accept(LEGACY_DIAMOND_PICKAXE_EXTREME.get());
                     output.accept(LEGACY_DIAMOND_HELMET_EXTREME.get());
                     output.accept(LEGACY_DIAMOND_CHESTPLATE_EXTREME.get());
